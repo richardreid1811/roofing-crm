@@ -1,0 +1,56 @@
+// Typed client for the Worker API.
+import type { Lead, LeadEvent, LeadInput, LeadPatch, Stage } from "../shared/leads";
+
+export type Snapshot = {
+  run_id: string;
+  published_at: string;
+  manifest_cid: string;
+  root_cid: string;
+  tables: Record<string, { cid: string; size: number }>;
+  counts: Record<string, string>;
+  gateways: string[];
+  history_url: string;
+  stale?: boolean;
+};
+
+export class ApiError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+  ) {
+    super(message);
+  }
+}
+
+async function call<T>(path: string, init?: RequestInit): Promise<T> {
+  const res = await fetch(`/api${path}`, {
+    ...init,
+    headers: { "content-type": "application/json", ...(init?.headers ?? {}) },
+  });
+  if (res.status === 204) return undefined as T;
+  const body = (await res.json().catch(() => ({}))) as { message?: string; error?: string };
+  if (!res.ok) throw new ApiError(body.message ?? body.error ?? `HTTP ${res.status}`, res.status);
+  return body as T;
+}
+
+export const api = {
+  snapshot: () => call<Snapshot>("/snapshot"),
+  listLeads: (params: { stage?: Stage; q?: string } = {}) => {
+    const qs = new URLSearchParams(Object.entries(params).filter(([, v]) => v) as [string, string][]).toString();
+    return call<{ leads: Lead[]; counts: Record<Stage, number> }>(`/leads${qs ? `?${qs}` : ""}`);
+  },
+  getLead: (id: string) => call<{ lead: Lead; events: LeadEvent[] }>(`/leads/${encodeURIComponent(id)}`),
+  createLeads: (leads: LeadInput[]) =>
+    call<{ created: Lead[]; existing: Lead[] }>("/leads", { method: "POST", body: JSON.stringify({ leads }) }),
+  updateLead: (id: string, patch: LeadPatch) =>
+    call<{ lead: Lead }>(`/leads/${encodeURIComponent(id)}`, { method: "PATCH", body: JSON.stringify(patch) }),
+  addNote: (id: string, text: string) =>
+    call<{ ok: true }>(`/leads/${encodeURIComponent(id)}/notes`, { method: "POST", body: JSON.stringify({ text }) }),
+  deleteLead: (id: string) => call<void>(`/leads/${encodeURIComponent(id)}`, { method: "DELETE" }),
+  chat: (messages: unknown[], mode: "auto" | "answer") =>
+    call<{
+      model: string;
+      text: string;
+      toolCalls: { toolCallId: string; toolName: string; input: unknown; error?: string }[];
+    }>("/chat", { method: "POST", body: JSON.stringify({ messages, mode }) }),
+};

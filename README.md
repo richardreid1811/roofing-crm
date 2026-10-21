@@ -1,3 +1,7 @@
+> **Submission: Travis County, TX.** Live app: https://travis-roofing-crm.travis-oracle-web.workers.dev (no login).
+> Write-up, acceptance-criteria evidence and runbook: [SOLUTION.md](SOLUTION.md). Demo script: [docs/demo-script.md](docs/demo-script.md).
+> Data comes from the separate [Travis County Oracle pipeline](https://github.com/richardreid1811/oracle-property-intelligence-platform-pipeline-travis-tx).
+
 # Roofing CRM & Lead Identification UI
 
 ## Context
@@ -13,6 +17,7 @@ Create a map-based roofing lead CRM that enables users to locate properties from
 The UI should present property and permit details, including contractor information and BBB rating scores where available. Users should also be able to query the platform in natural language through a RAG-backed agent to discover roofing opportunities (for example, “show me open roofing permits older than five years within five miles of [city xyz]”).
 
 ## Acceptance Criteria
+
 - Default the map and search experience to a particular county, with support for exploring properties in the user’s selected area.
 - Allow users to center property search on current GPS location and/or a pin dropped on the map.
 - Allow users to set a configurable search radius around the selected location.
@@ -26,6 +31,7 @@ The UI should present property and permit details, including contractor informat
 - Show (disabled) sections on the CRM that would expand the product beyond the initial lead-identification workflow.
 
 ## Demo Transcript
+
 - Open the CRM centered on a particular county.
 - Drop a pin (or use GPS) and set a search radius.
 - Show roofs older than the age threshold (e.g., 15 years) within the radius.
@@ -37,10 +43,12 @@ The UI should present property and permit details, including contractor informat
 - Show disabled/placeholder sections for future CRM expansions beyond lead identification.
 
 ## Out of Scope
+
 - Property, permit, ownership, or enrichment data collection and ingestion pipelines (separate story).
 - Live BBB API integration beyond displaying scores already present in available data.
 - Actual outbound messaging to property owners (can be mocked or deferred).
 
 ## Reference
+
 - [Soofi XYZ Team Kit](https://github.com/soofi-xyz/soofi-xyz-team-kit)
 - [Elephant Oracle Skills](https://github.com/elephant-xyz/skills)
