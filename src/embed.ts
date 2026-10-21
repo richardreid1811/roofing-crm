@@ -16,6 +16,8 @@ export async function embedQuery(text: string): Promise<Float32Array> {
     (lib: { pipeline: (task: string, model: string, opts: { dtype: string }) => Promise<Extractor> }) =>
       lib.pipeline("feature-extraction", MODEL, { dtype: "q8" }),
   );
+  // A failed load (network, CDN) is not cached, so the next search tries again.
+  extractor.catch(() => (extractor = null));
   const fe = await extractor;
   const out = await fe([QUERY_PREFIX + text], { pooling: "cls", normalize: true });
   return out.data.subarray(0, out.dims[1]);
