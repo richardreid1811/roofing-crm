@@ -11,6 +11,8 @@ type Ctx = {
   dbReady: boolean;
   loadSteps: LoadStep[];
   loadError: string | null;
+  /** Re-run the snapshot and data load after a failure or timeout. */
+  retryLoad: () => void;
   leadsByProp: Map<string, Lead>;
   refreshLeads: () => Promise<void>;
   saveLeads: (inputs: LeadInput[]) => Promise<{ created: Lead[]; existing: Lead[] } | null>;
@@ -38,6 +40,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [dbReady, setDbReady] = useState(false);
   const [loadSteps, setLoadSteps] = useState<LoadStep[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [loadAttempt, setLoadAttempt] = useState(0);
   const [leadsByProp, setLeadsByProp] = useState<Map<string, Lead>>(new Map());
   const [propertyId, setPropertyId] = useState<string | null>(null);
   const [toasts, setToasts] = useState<Toast[]>([]);
@@ -80,6 +83,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
     [refreshLeads, toast],
   );
 
+  const retryLoad = useCallback(() => {
+    setLoadError(null);
+    setLoadSteps([]);
+    setDbReady(false);
+    setLoadAttempt((n) => n + 1);
+  }, []);
+
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -93,10 +103,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
         if (!cancelled) setLoadError(String((e as Error).message ?? e));
       }
     })();
-    void refreshLeads();
     return () => {
       cancelled = true;
     };
+  }, [loadAttempt]);
+
+  useEffect(() => {
+    void refreshLeads();
   }, [refreshLeads]);
 
   const value = useMemo<Ctx>(
@@ -105,6 +118,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       dbReady,
       loadSteps,
       loadError,
+      retryLoad,
       leadsByProp,
       refreshLeads,
       saveLeads,
@@ -122,6 +136,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       dbReady,
       loadSteps,
       loadError,
+      retryLoad,
       leadsByProp,
       refreshLeads,
       saveLeads,

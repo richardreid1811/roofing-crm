@@ -325,7 +325,7 @@ export const tools: ToolDef[] = [
   }),
   def({
     name: "open_roofing_permits_near",
-    description: `Roofing permits (re-roof / roof repair) within a radius that are still open or expired without a final inspection, longest-open first, with status, years open, contractor and Texas registry identity. min_open_years filters long-open permits. ${BBB_NOTE}`,
+    description: `Roofing permits (re-roof / roof repair) within a radius that are still open or expired without a final inspection, longest-open first, with status, years open, contractor, Texas registry identity and the property's estimated roof age (roof_age_years, roof_year, roof_age_basis, roof_age_confidence, as in aged_roofs_near). min_open_years filters long-open permits. ${BBB_NOTE}`,
     schema: openPermitsSchema,
     sql: (a) => {
       const p = point(a);
@@ -336,8 +336,10 @@ export const tools: ToolDef[] = [
                p.address, p.prop_id, round(${miles(p.lat, p.lon, "p.latitude", "p.longitude")}, 2) as distance_miles,
                p.contractor_company_name, p.contractor_key, p.contractor_phone, c.legal_name as contractor_legal_name,
                c.identity_status as contractor_identity, c.bbb_rating, c.bbb_status, left(p.description, 160) as description,
-               p.latitude, p.longitude, p.source_detail_url
+               l.roof_age_years, l.roof_year, l.roof_age_basis, l.roof_age_confidence, l.roof_covering,
+               l.permit_history_coverage, p.latitude, p.longitude, p.source_detail_url
         from roofing_permits p left join contractors c using (contractor_key)
+        left join leads l on l.prop_id = p.prop_id
         where ${openWhere(a, p)}
         order by p.opened_date, p.permit_number
         limit ${lim(a.limit)}`;

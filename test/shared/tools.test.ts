@@ -110,6 +110,17 @@ describe("single-signal tools", () => {
     expect(n(res.count?.matches)).toBe(1);
   });
 
+  it("open_roofing_permits_near carries the property's roof age with its basis and confidence", async () => {
+    const res = await runTool("open_roofing_permits_near", at, run);
+    const byPermit = Object.fromEntries(res.rows.map((r) => [String(r.permit_number), r]));
+    expect(Object.keys(byPermit).sort()).toEqual(["2017-001 BP", "2024-002 BP"]);
+    expect(n(byPermit["2017-001 BP"].roof_age_years)).toBe(10);
+    expect(byPermit["2017-001 BP"].roof_age_confidence).toBe("high");
+    expect(byPermit["2017-001 BP"].roof_age_basis).toBe("tcad_year_built_assumes_original_roof");
+    expect(n(byPermit["2024-002 BP"].roof_age_years)).toBe(18);
+    expect(n(byPermit["2024-002 BP"].roof_year)).toBe(new Date().getFullYear() - 18);
+  });
+
   it("hail_exposed_roofs_near ignores hail before the roof year", async () => {
     const res = await runTool("hail_exposed_roofs_near", { ...at, since: "1980-01-01" }, run);
     // The 40-year-old report at the center predates every roof; the recent one is within 1 mile of 2, 3 and 5.

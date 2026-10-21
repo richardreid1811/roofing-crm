@@ -3,8 +3,9 @@ import markerIcon2x from "leaflet/dist/images/marker-icon-2x.png";
 import markerIcon from "leaflet/dist/images/marker-icon.png";
 import markerShadow from "leaflet/dist/images/marker-shadow.png";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { coverageNoteFor } from "../../shared/coverage";
 import { COUNTY, inCounty, LEAD_SCORE_EXPLAINED, type Row } from "../../shared/tools";
-import { runTool } from "../db";
+import { query, runTool } from "../db";
 import { fmt, label, toLeadInput } from "../format";
 import { useApp } from "../state";
 import Signals, { markerColor } from "../components/Signals";
@@ -42,12 +43,13 @@ const DEFAULT_FILTERS: Filters = {
 const ROW_LIMIT = 200;
 
 export default function Finder() {
-  const { dbReady, snapshot, saveLeads, leadsByProp, openProperty, toast } = useApp();
+  const { dbReady, loadError, retryLoad, snapshot, saveLeads, leadsByProp, openProperty, toast } = useApp();
   const [center, setCenter] = useState<Center>({ ...COUNTY.defaultPin });
   const [place, setPlace] = useState("");
   const [f, setF] = useState<Filters>(DEFAULT_FILTERS);
   const [rows, setRows] = useState<Row[]>([]);
   const [count, setCount] = useState<Row | undefined>();
+  const [coverageNote, setCoverageNote] = useState<string | undefined>();
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -162,9 +164,12 @@ export default function Finder() {
       setErr(null);
       try {
         const res = await runTool("find_leads", args);
+        // Same deterministic caveat as the assistant: few permit leads may mean no permit data there.
+        const note = await coverageNoteFor("find_leads", res.args, res.rows, query).catch(() => undefined);
         if (cancelled) return;
         setRows(res.rows);
         setCount(res.count);
+        setCoverageNote(note);
         setSelected(new Set());
       } catch (e) {
         if (!cancelled) setErr(String((e as Error).message ?? e));
@@ -392,6 +397,13 @@ export default function Finder() {
             <h2 className="inline-h">Lead candidates</h2>{" "}
             {busy ? (
               <span className="muted">Searching…</span>
+            ) : loadError ? (
+              <span className="muted">
+                The Travis County data did not load.{" "}
+                <button className="small" onClick={retryLoad}>
+                  Retry
+                </button>
+              </span>
             ) : !dbReady ? (
               <span className="muted">Loading Travis County data from IPFS…</span>
             ) : count ? (
@@ -403,6 +415,7 @@ export default function Finder() {
                 {Number(count.matches) > rows.length ? ` · top ${rows.length} by score` : ""}
               </span>
             ) : null}
+            {!busy && dbReady && count && coverageNote && <p className="small coverage-note">{coverageNote}</p>}
           </div>
           <button className="primary" disabled={!selected.size} onClick={saveSelected}>
             Save {selected.size || ""} as lead{selected.size === 1 ? "" : "s"}

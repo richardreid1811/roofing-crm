@@ -24,7 +24,7 @@ function useRoute(): string[] {
 
 export default function App() {
   const route = useRoute();
-  const { snapshot, dbReady, loadSteps, loadError, leadsByProp, toasts } = useApp();
+  const { snapshot, dbReady, loadSteps, loadError, retryLoad, leadsByProp, toasts } = useApp();
   const [showData, setShowData] = useState(false);
   const [navOpen, setNavOpen] = useState(false);
   const view = route[0];
@@ -63,6 +63,11 @@ export default function App() {
             <>Loading data {loadSteps.length}/4…</>
           )}
         </button>
+        {loadError && (
+          <button className="chip retry" onClick={retryLoad} title={loadError}>
+            Retry
+          </button>
+        )}
       </header>
       <nav className={`sidebar ${navOpen ? "open" : ""}`}>
         <div className="nav-group">
@@ -94,8 +99,11 @@ export default function App() {
       </nav>
       <main className="main">
         {loadError && (
-          <div className="banner error">
-            Could not load the published data: {loadError}. Lead records still work; reload to retry.
+          <div className="banner error row between wrap">
+            <span>Could not load the published data: {loadError}. Lead records still work.</span>
+            <button className="small" onClick={retryLoad}>
+              Retry
+            </button>
           </div>
         )}
         {view === "leads" ? (

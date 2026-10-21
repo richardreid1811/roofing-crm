@@ -218,6 +218,13 @@ input[type="range"] {
 .chip.data:hover {
   background: rgba(255, 255, 255, 0.1) !important;
 }
+.chip.retry {
+  font-weight: 600;
+  border-color: #ffb4a8;
+}
+.chip.retry:hover {
+  background: rgba(255, 255, 255, 0.15) !important;
+}
 .menu-btn {
   display: none;
   background: transparent;

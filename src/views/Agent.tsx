@@ -317,10 +317,10 @@ function ToolTurn({ turn }: { turn: Extract<Turn, { kind: "tool" }> }) {
                         )}
                       </td>
                       <td>{fmt(r.situs_address ?? r.address)}</td>
-                      <td>
+                      <td title={r.roof_age_basis ? label(r.roof_age_basis) : undefined}>
                         {r.roof_age_years != null ? `${fmt(r.roof_age_years)} yrs` : "—"}
                         {r.roof_age_confidence ? (
-                          <div className="muted small">{label(r.roof_age_confidence)}</div>
+                          <div className="muted small">{label(r.roof_age_confidence)} confidence</div>
                         ) : null}
                       </td>
                       <td className="small">

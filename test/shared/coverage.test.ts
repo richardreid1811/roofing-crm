@@ -1,7 +1,7 @@
 import { beforeAll, describe, expect, it } from "vitest";
 import { coverageNote, coverageNoteFor } from "../../shared/coverage";
-import type { Row, Run } from "../../shared/tools";
-import { CENTER, fixture } from "./fixture";
+import { runTool, type Row, type Run } from "../../shared/tools";
+import { CENTER, fixture, n } from "./fixture";
 
 let run: Run;
 beforeAll(async () => {
@@ -57,4 +57,27 @@ describe("coverage note", () => {
     );
     expect(await coverageNoteFor("semantic_search_permits", {}, [{ permit_number: "x" }], run)).toBeUndefined();
   });
+
+  it("warns on a finder search over Pflugerville, where 0 open permits means no permit data", async () => {
+    // Two Pflugerville properties with old roofs and no permit history, ~15 miles from downtown.
+    await run(`insert into leads select * replace ('P' || prop_id as prop_id, 'CITY OF PFLUGERVILLE' as jurisdiction,
+      'municipal_permits_not_yet_ingested' as permit_history_coverage, 30.44 as latitude, -97.62 as longitude)
+      from leads where prop_id in ('1', '4')`);
+    // Exactly what the Lead finder runs: find_leads, then the caveat over its searched area.
+    const res = await runTool(
+      "find_leads",
+      { latitude: 30.44, longitude: -97.62, radius_miles: 1.5, roof_older_than_years: 15, open_permit_min_years: 0 },
+      run,
+    );
+    expect(n(res.count?.matches)).toBe(2);
+    expect(n(res.count?.open_permit)).toBe(0);
+    expect(await coverageNoteFor("find_leads", res.args, res.rows, run)).toBe(
+      "100% of properties in this area are in jurisdictions whose permits are not in the data (Pflugerville requires a portal login), so open-permit results here are incomplete.",
+    );
+    // Downtown Austin (full permit history) stays unannotated.
+    const austin = await runTool("find_leads", { ...CENTER_ARGS, roof_older_than_years: 15 }, run);
+    expect(await coverageNoteFor("find_leads", austin.args, austin.rows, run)).toBeUndefined();
+  });
 });
+
+const CENTER_ARGS = { latitude: CENTER.lat, longitude: CENTER.lon, radius_miles: 1.5 };
