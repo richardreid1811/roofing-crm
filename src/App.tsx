@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { COUNTY } from "../shared/tools";
+import BbbDialog from "./components/BbbDialog";
 import DataInfo from "./components/DataInfo";
 import PropertyDrawer from "./components/PropertyDrawer";
 import { FUTURE_SECTIONS } from "./future";
@@ -108,6 +109,7 @@ export default function App() {
         )}
       </main>
       <PropertyDrawer />
+      <BbbDialog />
       {showData && <DataInfo onClose={() => setShowData(false)} />}
       <div className="toasts" role="status">
         {toasts.map((t) => (

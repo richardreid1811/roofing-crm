@@ -144,3 +144,53 @@ describe("other routes", () => {
       ).toBe(400);
   });
 });
+
+describe("rep-recorded BBB ratings", () => {
+  const KEY = "contractor:0123456789abcdef0123456789abcdef";
+  const OTHER = "contractor:fedcba9876543210fedcba9876543210";
+  const rec = (extra: Record<string, unknown> = {}) => ({
+    contractor_key: KEY,
+    contractor_name: "ACME ROOFING",
+    rating: "B+",
+    ...extra,
+  });
+  type Rating = { id: number; rating: string; accredited: boolean | null; contractor_key: string };
+
+  it("records ratings, keeps history and serves the latest per contractor in batches", async () => {
+    expect((await call("/bbb", { method: "POST", body: JSON.stringify(rec()) })).status).toBe(201);
+    const second = await call("/bbb", {
+      method: "POST",
+      body: JSON.stringify(
+        rec({ rating: "A+", accredited: true, profile_url: "https://www.bbb.org/us/tx/austin/profile/roofing/acme-1" }),
+      ),
+    });
+    const saved = (await json<{ rating: Rating }>(second)).rating;
+    expect(saved).toMatchObject({ rating: "A+", accredited: true });
+
+    const batch = await json<{ ratings: Record<string, Rating> }>(await call(`/bbb?keys=${KEY},${OTHER}`));
+    expect(batch.ratings[KEY].rating).toBe("A+");
+    expect(batch.ratings[OTHER]).toBeUndefined();
+
+    const { history } = await json<{ history: Rating[] }>(await call(`/bbb/${KEY}`));
+    expect(history.map((h) => h.rating)).toEqual(["A+", "B+"]);
+
+    // Removing a mistaken entry makes the previous one current again.
+    expect((await call(`/bbb/entries/${saved.id}`, { method: "DELETE" })).status).toBe(204);
+    const after = await json<{ ratings: Record<string, Rating> }>(await call(`/bbb?keys=${KEY}`));
+    expect(after.ratings[KEY].rating).toBe("B+");
+  });
+
+  it("validates contractor keys, ratings and BBB links", async () => {
+    const bad = [
+      rec({ contractor_key: "acme" }),
+      rec({ rating: "AAA" }),
+      rec({ profile_url: "https://evil.example/bbb.org/" }),
+      rec({ profile_url: "javascript:alert(1)" }),
+      rec({ extra: 1 }),
+    ];
+    for (const b of bad)
+      expect((await call("/bbb", { method: "POST", body: JSON.stringify(b) })).status, JSON.stringify(b)).toBe(400);
+    expect((await call("/bbb?keys=not-a-key")).status).toBe(400);
+    expect((await call("/bbb/not-a-key")).status).toBe(400);
+  });
+});

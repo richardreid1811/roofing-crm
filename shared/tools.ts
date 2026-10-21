@@ -169,7 +169,7 @@ export function findLeadsSql(a: FindLeadsArgs): string {
            b.roof_age_years, b.roof_year, b.roof_age_basis, b.roof_age_confidence, b.roof_covering, b.year_built,
            coalesce(b.open_permits, 0) as open_permits, coalesce(b.expired_unfinaled_permits, 0) as expired_unfinaled_permits,
            b.oldest_open_permit, b.oldest_open_status, b.oldest_open_date, round(b.oldest_open_days / 365.25, 1) as oldest_open_years,
-           b.oldest_open_contractor, c.legal_name as contractor_legal_name, c.identity_status as contractor_identity,
+           b.oldest_open_contractor, b.oldest_open_contractor_key as contractor_key, c.legal_name as contractor_legal_name, c.identity_status as contractor_identity,
            c.bbb_rating, c.bbb_status,
            b.severe_hail_reports_since_roof, b.max_hail_inches_since_roof, b.last_severe_hail_date_since_roof,
            b.owner_name, b.owner_mail_region, b.permit_history_coverage, b.imprv_state_cd,
@@ -334,7 +334,7 @@ export const tools: ToolDef[] = [
                date_diff('day', p.opened_date, current_date) as open_days,
                round(date_diff('day', p.opened_date, current_date) / 365.25, 1) as open_years,
                p.address, p.prop_id, round(${miles(p.lat, p.lon, "p.latitude", "p.longitude")}, 2) as distance_miles,
-               p.contractor_company_name, p.contractor_phone, c.legal_name as contractor_legal_name,
+               p.contractor_company_name, p.contractor_key, p.contractor_phone, c.legal_name as contractor_legal_name,
                c.identity_status as contractor_identity, c.bbb_rating, c.bbb_status, left(p.description, 160) as description,
                p.latitude, p.longitude, p.source_detail_url
         from roofing_permits p left join contractors c using (contractor_key)
@@ -372,7 +372,7 @@ export const tools: ToolDef[] = [
         with q as (select ${vec} as v)
         select p.permit_number, p.status, p.status_bucket, p.roofing_work, p.opened_date,
                case when p.status_bucket in ('open', 'expired_unfinaled') then round(date_diff('day', p.opened_date, current_date) / 365.25, 1) end as open_years,
-               p.address, p.prop_id, left(p.description, 200) as description, p.contractor_company_name,
+               p.address, p.prop_id, left(p.description, 200) as description, p.contractor_company_name, p.contractor_key,
                c.legal_name as contractor_legal_name, c.identity_status as contractor_identity, c.bbb_rating,
                round(array_cosine_similarity(e.embedding::FLOAT[${EMBED_DIMS}], q.v)::DOUBLE, 3) as similarity,
                ${p ? `round(${miles(p.lat, p.lon, "p.latitude", "p.longitude")}, 2) as distance_miles,` : ""}
@@ -416,7 +416,7 @@ export const propertyPermitsSql = (id: string) => `
               else date_diff('day', p.opened_date, coalesce(p.completed_date, p.closed_date)) end as duration_days,
          p.status_bucket in ('open', 'expired_unfinaled') as is_open,
          left(p.description, 300) as description, p.job_valuation,
-         p.contractor_company_name, p.contractor_full_name, p.contractor_phone, p.contractor_city,
+         p.contractor_company_name, p.contractor_key, p.contractor_full_name, p.contractor_phone, p.contractor_city,
          c.legal_name as contractor_legal_name, c.identity_status as contractor_identity, c.taxpayer_number,
          c.roofing_permit_count as contractor_roofing_permits, c.bbb_rating, c.bbb_status, c.tdlr_licenses,
          p.source_detail_url

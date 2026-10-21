@@ -1,7 +1,8 @@
 // Property and permit detail: roof-age evidence, owner, hail and every roofing permit with
 // status, open duration, contractor, registry identity and BBB, plus "Save as lead".
 import { useEffect, useState } from "react";
-import { bbbLookupUrl, propertyPermitsSql, propertySql, type Row } from "../../shared/tools";
+import { propertyPermitsSql, propertySql, type Row } from "../../shared/tools";
+import { loadRatings, recordedRating } from "../bbb";
 import { query } from "../db";
 import { date, duration, fmt, label, money, toLeadInput, year } from "../format";
 import { useApp } from "../state";
@@ -24,6 +25,7 @@ export default function PropertyDrawer() {
       try {
         const [p] = await query(propertySql(propertyId));
         const ps = await query(propertyPermitsSql(propertyId));
+        await loadRatings(ps.map((x) => String(x.contractor_key ?? ""))).catch(() => undefined);
         if (cancelled) return;
         if (!p) setErr(`Property ${propertyId} is not in this snapshot.`);
         setProp(p ?? null);
@@ -57,8 +59,10 @@ export default function PropertyDrawer() {
         oldest_open_status: oldest?.status,
         oldest_open_years: oldest ? Math.round((Number(oldest.duration_days) / 365.25) * 10) / 10 : null,
         oldest_open_contractor: oldest?.contractor_company_name,
+        contractor_key: oldest?.contractor_key,
         contractor_identity: oldest?.contractor_identity,
         bbb_rating: oldest?.bbb_rating,
+        bbb_rating_recorded: recordedRating(oldest?.contractor_key)?.rating,
       },
       snapshot,
       "property",
@@ -217,8 +221,8 @@ export default function PropertyDrawer() {
                   <dd>
                     <BbbCell
                       rating={p.bbb_rating}
-                      lookupUrl={bbbLookupUrl(p.contractor_company_name)}
-                      hasContractor={!!p.contractor_company_name}
+                      contractorKey={p.contractor_key}
+                      contractorName={p.contractor_company_name}
                     />
                   </dd>
                   {p.job_valuation != null && (

@@ -5,6 +5,7 @@ import { api, type Snapshot } from "./api";
 import { initDb, type LoadStep } from "./db";
 
 type Toast = { id: number; text: string; kind: "ok" | "error" };
+export type BbbTarget = { key: string; name: string };
 type Ctx = {
   snapshot: Snapshot | null;
   dbReady: boolean;
@@ -17,6 +18,12 @@ type Ctx = {
   propertyId: string | null;
   toast: (text: string, kind?: Toast["kind"]) => void;
   toasts: Toast[];
+  /** Contractor whose BBB rating dialog is open. */
+  bbbTarget: BbbTarget | null;
+  openBbb: (t: BbbTarget | null) => void;
+  /** Bumped whenever a recorded rating changes, so cells re-read the cache. */
+  bbbVersion: number;
+  bbbChanged: () => void;
 };
 const AppContext = createContext<Ctx | null>(null);
 
@@ -34,6 +41,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [leadsByProp, setLeadsByProp] = useState<Map<string, Lead>>(new Map());
   const [propertyId, setPropertyId] = useState<string | null>(null);
   const [toasts, setToasts] = useState<Toast[]>([]);
+  const [bbbTarget, openBbb] = useState<BbbTarget | null>(null);
+  const [bbbVersion, setBbbVersion] = useState(0);
+  const bbbChanged = useCallback(() => setBbbVersion((v) => v + 1), []);
   const toastId = useRef(0);
 
   const toast = useCallback((text: string, kind: Toast["kind"] = "ok") => {
@@ -102,8 +112,26 @@ export function AppProvider({ children }: { children: ReactNode }) {
       propertyId,
       toast,
       toasts,
+      bbbTarget,
+      openBbb,
+      bbbVersion,
+      bbbChanged,
     }),
-    [snapshot, dbReady, loadSteps, loadError, leadsByProp, refreshLeads, saveLeads, propertyId, toast, toasts],
+    [
+      snapshot,
+      dbReady,
+      loadSteps,
+      loadError,
+      leadsByProp,
+      refreshLeads,
+      saveLeads,
+      propertyId,
+      toast,
+      toasts,
+      bbbTarget,
+      bbbVersion,
+      bbbChanged,
+    ],
   );
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;
 }

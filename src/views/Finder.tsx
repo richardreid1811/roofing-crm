@@ -482,8 +482,8 @@ export default function Finder() {
                     <td onClick={(e) => e.stopPropagation()}>
                       <BbbCell
                         rating={r.bbb_rating}
-                        lookupUrl={r.bbb_lookup_url}
-                        hasContractor={!!r.oldest_open_contractor}
+                        contractorKey={r.contractor_key}
+                        contractorName={r.oldest_open_contractor}
                       />
                     </td>
                     <td>{fmt(r.distance_miles)}</td>

@@ -3,6 +3,7 @@
 import * as duckdb from "@duckdb/duckdb-wasm";
 import { PLACES_SQL, runTool as runSharedTool, type Row, type ToolResult } from "../shared/tools";
 import type { Snapshot } from "./api";
+import { withRecordedRatings } from "./bbb";
 import { embedQuery } from "./embed";
 
 export type LoadStep = { table: string; cid: string; gateway: string; ms: number; rows: number };
@@ -82,5 +83,6 @@ export async function runTool(name: string, args: unknown): Promise<ToolResult> 
     embeddings ??= loadTable("permit_embeddings");
     await embeddings;
   }
-  return runSharedTool(name, args, query, embedQuery);
+  const res = await runSharedTool(name, args, query, embedQuery);
+  return { ...res, rows: await withRecordedRatings(res.rows) };
 }

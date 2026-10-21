@@ -1,4 +1,5 @@
 // Typed client for the Worker API.
+import type { BbbRating, BbbRatingInput } from "../shared/bbb";
 import type { Lead, LeadEvent, LeadInput, LeadPatch, Stage } from "../shared/leads";
 
 export type Snapshot = {
@@ -47,6 +48,12 @@ export const api = {
   addNote: (id: string, text: string) =>
     call<{ ok: true }>(`/leads/${encodeURIComponent(id)}/notes`, { method: "POST", body: JSON.stringify({ text }) }),
   deleteLead: (id: string) => call<void>(`/leads/${encodeURIComponent(id)}`, { method: "DELETE" }),
+  bbbRatings: (keys: string[]) =>
+    call<{ ratings: Record<string, BbbRating> }>(`/bbb?keys=${encodeURIComponent(keys.join(","))}`),
+  bbbHistory: (key: string) => call<{ history: BbbRating[] }>(`/bbb/${encodeURIComponent(key)}`),
+  recordBbb: (input: BbbRatingInput) =>
+    call<{ rating: BbbRating }>("/bbb", { method: "POST", body: JSON.stringify(input) }),
+  deleteBbbEntry: (id: number) => call<void>(`/bbb/entries/${id}`, { method: "DELETE" }),
   chat: (messages: unknown[], mode: "auto" | "answer") =>
     call<{
       model: string;

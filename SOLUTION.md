@@ -48,9 +48,15 @@ snapshot to IPFS. This repo does not gather or ingest data.
 | Data gathering out of scope                                | The app reads the pipeline's published Parquet tables by CID from public IPFS gateways (DuckDB-WASM in the browser). **About this data** (top bar) shows the snapshot, manifest CID, tables and gateways                                                                    |
 | Disabled sections for future expansion                     | Six "Coming soon" sections in the navigation, each with a disabled preview page, plus disabled outreach, estimate and route actions on leads and properties                                                                                                                 |
 
-**BBB.** BBB has no public API and blocks automated access, so the dataset has no BBB ratings (this README
-says live BBB integration is out of scope). The UI shows a rating when the data has one, otherwise
-"Not in data", with a **Check BBB** link that opens BBB's own search for that contractor.
+**BBB.** BBB has no public API and blocks automated access, so the published dataset has no BBB ratings
+(this README puts live BBB integration out of scope). The app never contacts BBB. Instead, wherever a
+contractor appears (candidate list, property panel, assistant results, lead record) there is:
+
+- **Check BBB ↗**: opens BBB's own search for that contractor in a new tab.
+- **record / update**: the rep enters what BBB shows (rating, accreditation, profile link, note). It is stored
+  in D1 per contractor (keyed by the pipeline's stable `contractor_key`, with history; the latest entry is
+  current) and shown everywhere with a "rep-entered" tag and who/when on hover. Saved leads carry it in
+  their evidence, and the assistant cites it as "entered by a rep from bbb.org on <date>".
 
 ## Architecture
 
@@ -115,6 +121,7 @@ Deviations, all because the assignment requires zero ongoing infrastructure cost
   - stage changes, edits and notes on the timeline
   - list, filter and search
   - delete with activity cleanup
+  - BBB ratings: history, latest-per-contractor batch reads, entry removal, and validation of contractor keys, ratings and bbb.org-only links
   - malformed chat requests rejected before the model is called
 
 The tools were also run against the real published tables (442k properties): a combined lead search
@@ -138,7 +145,7 @@ A new pipeline run is picked up within 5 minutes without redeploying.
 - **Permit coverage** is the City of Austin (about 56% of parcels, plus Austin ETJ permits). Unincorporated
   Travis County issues no building permits, and other cities' permits are not ingested yet. Outside Austin,
   roof age is the year-built estimate. The property panel says which applies.
-- **BBB ratings** are not in the data (see above).
+- **BBB ratings** are not in the published data; they appear only once a rep records them (see above).
 - **Shared demo workspace**: there is no login, so every visitor sees and edits the same leads. Auth and
   per-company workspaces would come before real use.
 - **First load** downloads about 30 MB of Parquet from IPFS; later queries run locally in the browser. Semantic

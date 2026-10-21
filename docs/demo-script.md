@@ -17,8 +17,12 @@ wait for the top-right chip to read "Data: snapshot …" before recording.
    Sort by **Open permit**. Show the red markers, "Expired, never finaled" statuses and years open.
 5. **Property and permit detail (1 min).** Click the top row. Walk through the roof evidence, owner,
    and the permit card: status, opened and expires dates, **open for N years**, contractor and phone,
-   registry match, and BBB ("Not in data", **Check BBB** opens BBB's own search).
-   > "BBB has no public API, so ratings aren't in the data; the link lets a rep check it directly."
+   registry match, and BBB. Click **Check BBB ↗** (BBB's own search opens in a new tab), read the rating,
+   come back and click **record**: choose the rating, accreditation and paste the profile link, then save.
+   The rating now shows with a "rep-entered" tag here, in the candidate list and on any lead for that
+   contractor.
+   > "BBB has no public API and blocks automation, so the app never scrapes it; reps check BBB in one click
+   > and record what they see, and the rating follows the contractor everywhere."
 6. **Convert matches into leads (45 s).** Click **Save as lead** in the panel, close it, tick three more
    rows and click **Save 3 as leads**. Show the toast, the check marks and the Leads badge.
 7. **Manage leads (1 min).** Open **Leads**: stage tabs with counts. Open a lead, move it to

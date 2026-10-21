@@ -2,6 +2,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { PRIORITIES, STAGE_LABEL, STAGES, type Lead, type LeadEvent, type Stage } from "../../shared/leads";
 import { api } from "../api";
+import { loadRatings } from "../bbb";
+import BbbCell from "../components/BbbCell";
 import { date, fmt, label } from "../format";
 import { useApp } from "../state";
 
@@ -153,6 +155,7 @@ function LeadDetail({ id, onChanged }: { id: string; onChanged: () => Promise<vo
   const load = useCallback(async () => {
     try {
       const res = await api.getLead(id);
+      if (res.lead.signals.contractor_key) await loadRatings([res.lead.signals.contractor_key]).catch(() => undefined);
       setLead(res.lead);
       setEvents(res.events);
       setForm({
@@ -300,7 +303,9 @@ function LeadDetail({ id, onChanged }: { id: string; onChanged: () => Promise<vo
           {s.contractor_identity ? ` · ${label(s.contractor_identity)}` : ""}
         </dd>
         <dt>BBB</dt>
-        <dd>{s.bbb_rating ?? (s.contractor ? "Not in data" : "—")}</dd>
+        <dd>
+          <BbbCell rating={null} contractorKey={s.contractor_key} contractorName={s.contractor} />
+        </dd>
         <dt>Hail since roof</dt>
         <dd>{s.severe_hail_reports ? `${s.severe_hail_reports} severe report(s)` : "None"}</dd>
         {s.lead_score != null && (

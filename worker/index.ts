@@ -2,6 +2,7 @@
 // pointer and the agent relay to Workers AI. No property data is stored or proxied here.
 import { Hono } from "hono";
 import { agentStep, AgentError, MODEL, validateChat } from "./agent";
+import { bbb } from "./bbb";
 import type { AppEnv } from "./env";
 import { leads } from "./leads";
 import { limited } from "./limits";
@@ -25,6 +26,7 @@ app.get("/snapshot", async (c) => {
 });
 
 app.route("/leads", leads);
+app.route("/bbb", bbb);
 
 app.post("/chat", async (c) => {
   if (limited(`ai:${c.req.header("cf-connecting-ip") ?? "local"}`, 20))

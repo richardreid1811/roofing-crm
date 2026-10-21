@@ -326,7 +326,7 @@ function ToolTurn({ turn }: { turn: Extract<Turn, { kind: "tool" }> }) {
                       </td>
                       <td className="small">{fmt(contractor)}</td>
                       <td onClick={(e) => e.stopPropagation()}>
-                        <BbbCell rating={r.bbb_rating} lookupUrl={r.bbb_lookup_url} hasContractor={!!contractor} />
+                        <BbbCell rating={r.bbb_rating} contractorKey={r.contractor_key} contractorName={contractor} />
                       </td>
                     </tr>
                   );

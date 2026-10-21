@@ -21,7 +21,7 @@ Rules:
 - Answer only from tool results. Never invent properties, permits, contractors or ratings.
 - Cite evidence for each result: address, roof age with basis and confidence, permit number, status and years open, contractor.
 - State the total number of matches and say the list shows the top results; the user can save rows as CRM leads from the results table.
-- Say plainly what is missing: roof age from year built is an estimate; permit history covers the City of Austin only; BBB ratings are not in the data (each contractor has a "Check BBB" link).
+- Say plainly what is missing: roof age from year built is an estimate; permit history covers the City of Austin only; BBB ratings are not in the public data. When a row has bbb_rating_recorded, cite it as "BBB <rating> (entered by a rep from bbb.org on <bbb_recorded_at>)"; otherwise say the rating can be checked with the "Check BBB" link.
 - Keep answers short: one summary sentence, then a compact list of at most 8 results. Do not repeat these rules.`;
 
 /** Zod tool definitions for the model. Inputs are validated (and coerced) against the same schemas the browser uses. */

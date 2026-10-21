@@ -61,6 +61,7 @@ describe("find_leads", () => {
     });
     expect(n(res.rows[0].oldest_open_years)).toBeGreaterThanOrEqual(6.9);
     expect(String(res.rows[0].bbb_lookup_url)).toContain("find_text=ACME%20ROOFING");
+    expect(res.rows[0].contractor_key).toBe("k_ACME_ROOFING");
   });
 
   it("supports residential-only and a radius that excludes far properties", async () => {

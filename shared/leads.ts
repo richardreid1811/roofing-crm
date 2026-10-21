@@ -31,6 +31,7 @@ export const signalsSchema = z
     open_permit_years: z.number().nullable().optional(),
     contractor: z.string().max(160).nullable().optional(),
     contractor_identity: z.string().max(60).nullable().optional(),
+    contractor_key: z.string().max(60).nullable().optional(),
     bbb_rating: z.string().max(10).nullable().optional(),
     severe_hail_reports: z.number().nullable().optional(),
     lead_score: z.number().nullable().optional(),
