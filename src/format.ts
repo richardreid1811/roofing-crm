@@ -57,6 +57,7 @@ const LABELS: Record<string, string> = {
   pending_registry_refresh: "Registry check pending",
   austin_permit_history_1978_plus: "City of Austin permit history (1978+)",
   austin_etj_or_limited_purpose_permits: "Partial: Austin ETJ / limited-purpose permits",
+  lakeway_permit_history: "City of Lakeway permit history",
   no_county_building_permits_in_texas: "None: unincorporated Travis County issues no building permits",
   municipal_permits_not_yet_ingested: "None yet: city permits not ingested",
   excluded_no_public_api_http_403: "Not available: BBB offers no public API",

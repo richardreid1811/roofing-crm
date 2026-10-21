@@ -2,10 +2,11 @@
 // it as SQL over the IPFS snapshot, and the model answers from those rows. Every tool call shows its
 // SQL and results, and result rows can be saved as CRM leads.
 import { Fragment, useState } from "react";
+import { coverageNoteFor } from "../../shared/coverage";
 import type { Row } from "../../shared/tools";
 import { api } from "../api";
 import BbbCell from "../components/BbbCell";
-import { runTool } from "../db";
+import { query, runTool } from "../db";
 import { fmt, label, toLeadInput } from "../format";
 import { useApp } from "../state";
 
@@ -23,7 +24,16 @@ type Msg =
 type Turn =
   | { kind: "user"; text: string }
   | { kind: "assistant"; text: string }
-  | { kind: "tool"; name: string; args: unknown; rows: Row[]; total?: unknown; sql: string; error?: string }
+  | {
+      kind: "tool";
+      name: string;
+      args: unknown;
+      rows: Row[];
+      total?: unknown;
+      sql: string;
+      error?: string;
+      coverageNote?: string;
+    }
   | { kind: "error"; text: string };
 
 const MAX_STEPS = 5;
@@ -107,6 +117,8 @@ export default function Agent() {
           try {
             if (invalid) throw new Error(invalid);
             const res = await runTool(call.toolName, call.input);
+            // Deterministic caveat: share of the searched area without permit history.
+            const coverageNote = await coverageNoteFor(call.toolName, res.args, res.rows, query).catch(() => undefined);
             setTurns((t) => [
               ...t,
               {
@@ -116,6 +128,7 @@ export default function Agent() {
                 rows: res.rows,
                 total: res.count?.matches,
                 sql: res.sql,
+                coverageNote,
               },
             ]);
             results.push({
@@ -128,6 +141,7 @@ export default function Agent() {
                   ...(res.resolvedPlace ? { search_center: res.resolvedPlace } : {}),
                   ...(res.count ? { total_matches: res.count } : {}),
                   returned_rows: res.rows.length,
+                  ...(coverageNote ? { coverage_note: coverageNote } : {}),
                   rows: compact(res.rows),
                 } as never,
               },
@@ -344,6 +358,7 @@ function ToolTurn({ turn }: { turn: Extract<Turn, { kind: "tool" }> }) {
           </div>
         </>
       )}
+      {turn.coverageNote && <p className="small coverage-note">{turn.coverageNote}</p>}
     </div>
   );
 }

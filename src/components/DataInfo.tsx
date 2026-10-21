@@ -75,8 +75,9 @@ export default function DataInfo({ onClose }: { onClose: () => void }) {
             estimate, marked low confidence).
           </li>
           <li>
-            Permit history covers the City of Austin. Unincorporated Travis County issues no building permits; other
-            cities are not ingested yet.
+            Permit history covers the City of Austin, including its ETJ. Pflugerville requires a portal login; City of
+            Lakeway permits are being added; other cities are not ingested yet. Unincorporated Travis County issues no
+            building permits.
           </li>
           <li>
             BBB ratings are not in the data: BBB blocks automated access and offers no public API. Each contractor has a

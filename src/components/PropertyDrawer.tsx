@@ -169,7 +169,11 @@ export default function PropertyDrawer() {
             {!permits.length && (
               <p className="muted small">
                 No roofing permits on record.{" "}
-                {prop.permit_history_coverage !== "austin_permit_history_1978_plus" &&
+                {![
+                  "austin_permit_history_1978_plus",
+                  "austin_etj_or_limited_purpose_permits",
+                  "lakeway_permit_history",
+                ].includes(String(prop.permit_history_coverage)) &&
                   "Permit history is not available for this jurisdiction."}
               </p>
             )}
