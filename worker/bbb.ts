@@ -3,7 +3,7 @@ import { Hono } from "hono";
 import { z } from "zod";
 import { bbbRatingInputSchema, contractorKeySchema, type BbbRating } from "../shared/bbb";
 import type { AppEnv } from "./env";
-import { limited } from "./limits";
+import { limitWrites, resolveWorkspace } from "./workspaces";
 
 type Row = Omit<BbbRating, "accredited"> & { accredited: number | null };
 const toRating = (r: Row): BbbRating => ({ ...r, accredited: r.accredited === null ? null : r.accredited === 1 });
@@ -11,11 +11,10 @@ const MAX_KEYS = 200;
 
 export const bbb = new Hono<AppEnv>();
 
-bbb.use("*", async (c, next) => {
-  if (c.req.method !== "GET" && limited(`w:${c.req.header("cf-connecting-ip") ?? "local"}`, 60))
-    return c.json({ error: "rate_limited", message: "Too many changes; wait a minute." }, 429);
-  await next();
-});
+// Ratings are global, not per workspace: a BBB rating is a public fact about a contractor, so every
+// workspace (demo or private) sees the same entries. Writes still resolve the workspace key, so an unknown
+// key is refused and the write limit applies per client and workspace.
+bbb.on(["POST", "DELETE"], "*", resolveWorkspace, limitWrites);
 
 // GET /api/bbb?keys=contractor:..,contractor:..  -> latest rating per key (keys without one are omitted)
 bbb.get("/", async (c) => {

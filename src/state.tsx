@@ -1,11 +1,15 @@
 // App-wide state: the snapshot pointer, the in-browser database, the saved-lead index and toasts.
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { MAX_LEADS_PER_SAVE, type Lead, type LeadInput } from "../shared/leads";
-import { api, type Snapshot } from "./api";
+import { DEMO_WORKSPACE_NAME } from "../shared/workspaces";
+import { api, ApiError, type Snapshot } from "./api";
 import { initDb, type LoadStep } from "./db";
+import { activeKey, adoptLink, forget, remember, setActive } from "./workspace";
 
 type Toast = { id: number; text: string; kind: "ok" | "error" };
 export type BbbTarget = { key: string; name: string };
+/** The workspace in use: key null is the public demo workspace. */
+export type ActiveWorkspace = { key: string | null; name: string };
 type Ctx = {
   snapshot: Snapshot | null;
   dbReady: boolean;
@@ -26,6 +30,9 @@ type Ctx = {
   /** Bumped whenever a recorded rating changes, so cells re-read the cache. */
   bbbVersion: number;
   bbbChanged: () => void;
+  workspace: ActiveWorkspace;
+  /** Switch to a saved private workspace by key, or to the demo workspace with null. */
+  switchWorkspace: (key: string | null) => void;
 };
 const AppContext = createContext<Ctx | null>(null);
 
@@ -48,6 +55,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [bbbVersion, setBbbVersion] = useState(0);
   const bbbChanged = useCallback(() => setBbbVersion((v) => v + 1), []);
   const toastId = useRef(0);
+  const [workspace, setWorkspace] = useState<ActiveWorkspace>(() => {
+    const key = adoptLink() ?? activeKey();
+    return { key, name: key ? "Private workspace" : DEMO_WORKSPACE_NAME };
+  });
+  const switchWorkspace = useCallback((key: string | null) => {
+    setActive(key);
+    setWorkspace({ key, name: key ? "Private workspace" : DEMO_WORKSPACE_NAME });
+  }, []);
 
   const toast = useCallback((text: string, kind: Toast["kind"] = "ok") => {
     const id = ++toastId.current;
@@ -55,14 +70,50 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), 4500);
   }, []);
 
+  // A private workspace: confirm the key and learn its name; an invalid key falls back to the demo.
+  useEffect(() => {
+    const key = workspace.key;
+    if (!key) return;
+    let cancelled = false;
+    api.workspace().then(
+      ({ workspace: w }) => {
+        if (cancelled) return;
+        remember(key, w.name);
+        setWorkspace((cur) => (cur.key === key ? { key, name: w.name } : cur));
+      },
+      (e: unknown) => {
+        if (cancelled || !(e instanceof ApiError && e.status === 401)) return;
+        forget(key);
+        setWorkspace({ key: null, name: DEMO_WORKSPACE_NAME });
+        toast("That private workspace link is not valid; showing the demo workspace.", "error");
+      },
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [workspace.key, toast]);
+
+  // A workspace link pasted into an open tab only changes the hash.
+  useEffect(() => {
+    const on = () => {
+      const key = adoptLink();
+      if (!key) return;
+      setWorkspace((cur) => (cur.key === key ? cur : { key, name: "Private workspace" }));
+      window.dispatchEvent(new HashChangeEvent("hashchange")); // let the router see #/leads
+    };
+    window.addEventListener("hashchange", on);
+    return () => window.removeEventListener("hashchange", on);
+  }, []);
+
   const refreshLeads = useCallback(async () => {
+    void workspace.key; // re-read when the workspace changes
     try {
       const { leads } = await api.listLeads();
       setLeadsByProp(new Map(leads.map((l) => [l.prop_id, l])));
     } catch (e) {
       toast(`Could not load leads: ${(e as Error).message}`, "error");
     }
-  }, [toast]);
+  }, [toast, workspace.key]);
 
   const saveLeads = useCallback(
     async (inputs: LeadInput[]) => {
@@ -139,6 +190,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       openBbb,
       bbbVersion,
       bbbChanged,
+      workspace,
+      switchWorkspace,
     }),
     [
       snapshot,
@@ -155,6 +208,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       bbbTarget,
       bbbVersion,
       bbbChanged,
+      workspace,
+      switchWorkspace,
     ],
   );
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;

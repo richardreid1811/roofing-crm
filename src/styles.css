@@ -955,3 +955,82 @@ button.link {
   display: inline-block;
   min-width: 150px;
 }
+
+/* workspace badge and switcher */
+.contents {
+  display: contents;
+}
+.ws {
+  position: relative;
+}
+.ws .modal-backdrop {
+  color: var(--ink); /* the dialog renders inside the dark top bar */
+}
+.chip.ws-badge {
+  max-width: 260px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.chip.ws-badge:hover {
+  background: rgba(255, 255, 255, 0.1) !important;
+}
+.chip.ws-badge.private {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+  font-weight: 600;
+}
+.chip.ws-badge.private:hover {
+  background: #9a3a17 !important;
+}
+.ws-menu {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 8px);
+  min-width: 240px;
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  color: var(--ink);
+  z-index: 1200;
+}
+.ws-menu button {
+  border: none;
+  background: none;
+  text-align: left;
+  padding: 7px 10px;
+  border-radius: 6px;
+}
+.ws-menu button:hover {
+  background: var(--accent-soft);
+}
+.ws-menu hr {
+  border: none;
+  border-top: 1px solid var(--line);
+  margin: 4px 0;
+  width: 100%;
+}
+.ws-heading {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  padding: 4px 10px;
+}
+.banner.warn {
+  background: #fff4e5;
+  border: 1px solid #f5c46b;
+  color: #6b4400;
+  border-radius: var(--radius);
+  padding: 10px 14px;
+  margin-bottom: 10px;
+}
+@media (max-width: 560px) {
+  .brand span {
+    display: none;
+  }
+  .chip.ws-badge {
+    max-width: 150px;
+  }
+}

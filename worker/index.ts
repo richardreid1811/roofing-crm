@@ -7,6 +7,7 @@ import type { AppEnv } from "./env";
 import { leads } from "./leads";
 import { limited } from "./limits";
 import { loadSnapshot } from "./snapshot";
+import { workspaces } from "./workspaces";
 
 export const app = new Hono<AppEnv>().basePath("/api");
 
@@ -27,7 +28,10 @@ app.get("/snapshot", async (c) => {
 
 app.route("/leads", leads);
 app.route("/bbb", bbb);
+app.route("/workspaces", workspaces);
 
+// Chat keeps the per-isolate limiter (see limits.ts): a D1 write per message is not worth it for a route
+// whose real cap is the Workers AI daily allocation.
 app.post("/chat", async (c) => {
   if (limited(`ai:${c.req.header("cf-connecting-ip") ?? "local"}`, 20))
     return c.json({ error: "rate_limited", message: "Too many requests; wait a minute." }, 429);

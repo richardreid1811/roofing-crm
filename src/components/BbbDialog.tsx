@@ -198,7 +198,8 @@ export default function BbbDialog() {
         )}
         <p className="muted small">
           BBB has no public API and blocks automated access, so this app never contacts BBB. Ratings here are entered by
-          reps and labelled that way.
+          reps and labelled that way. Ratings are shared by every workspace, including private ones: a rating is a
+          public fact about the contractor.
         </p>
       </div>
     </div>

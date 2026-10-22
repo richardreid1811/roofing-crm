@@ -1,6 +1,8 @@
 // Typed client for the Worker API.
 import type { BbbRating, BbbRatingInput } from "../shared/bbb";
 import type { Lead, LeadEvent, LeadInput, LeadPatch, Stage } from "../shared/leads";
+import { WORKSPACE_HEADER, type Workspace } from "../shared/workspaces";
+import { activeKey } from "./workspace";
 
 export type Snapshot = {
   run_id: string;
@@ -26,9 +28,15 @@ export class ApiError extends Error {
 }
 
 async function call<T>(path: string, init?: RequestInit): Promise<T> {
+  // A private workspace's key goes in a header; without one the Worker uses the public demo workspace.
+  const key = activeKey();
   const res = await fetch(`/api${path}`, {
     ...init,
-    headers: { "content-type": "application/json", ...(init?.headers ?? {}) },
+    headers: {
+      "content-type": "application/json",
+      ...(key ? { [WORKSPACE_HEADER]: key } : {}),
+      ...(init?.headers ?? {}),
+    },
   });
   if (res.status === 204) return undefined as T;
   const body = (await res.json().catch(() => ({}))) as { message?: string; error?: string };
@@ -56,6 +64,10 @@ export const api = {
   recordBbb: (input: BbbRatingInput) =>
     call<{ rating: BbbRating }>("/bbb", { method: "POST", body: JSON.stringify(input) }),
   deleteBbbEntry: (id: number) => call<void>(`/bbb/entries/${id}`, { method: "DELETE" }),
+  workspace: () => call<{ workspace: Workspace }>("/workspaces/self"),
+  createWorkspace: (name: string) =>
+    call<{ workspace: Workspace; key: string }>("/workspaces", { method: "POST", body: JSON.stringify({ name }) }),
+  deleteWorkspace: () => call<void>("/workspaces/self", { method: "DELETE" }),
   chat: (messages: unknown[], mode: "auto" | "answer") =>
     call<{
       model: string;

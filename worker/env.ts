@@ -5,4 +5,5 @@ export type Env = {
   /** URL of the pipeline's runs/history.json (latest published snapshot). */
   SNAPSHOT_HISTORY_URL: string;
 };
-export type AppEnv = { Bindings: Env };
+/** `workspace`: the resolved workspace id ("demo" when no key is sent), set by `resolveWorkspace`. */
+export type AppEnv = { Bindings: Env; Variables: { workspace: string } };

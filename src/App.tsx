@@ -3,6 +3,7 @@ import { COUNTY } from "../shared/tools";
 import BbbDialog from "./components/BbbDialog";
 import DataInfo from "./components/DataInfo";
 import PropertyDrawer from "./components/PropertyDrawer";
+import WorkspaceSwitcher from "./components/WorkspaceSwitcher";
 import { FUTURE_SECTIONS } from "./future";
 import { useApp } from "./state";
 import Agent from "./views/Agent";
@@ -24,7 +25,7 @@ function useRoute(): string[] {
 
 export default function App() {
   const route = useRoute();
-  const { snapshot, dbReady, loadSteps, loadError, retryLoad, leadsByProp, toasts } = useApp();
+  const { snapshot, dbReady, loadSteps, loadError, retryLoad, leadsByProp, toasts, workspace } = useApp();
   const [showData, setShowData] = useState(false);
   const [navOpen, setNavOpen] = useState(false);
   const view = route[0];
@@ -68,6 +69,7 @@ export default function App() {
             Retry
           </button>
         )}
+        <WorkspaceSwitcher />
       </header>
       <nav className={`sidebar ${navOpen ? "open" : ""}`}>
         <div className="nav-group">
@@ -106,15 +108,18 @@ export default function App() {
             </button>
           </div>
         )}
-        {view === "leads" ? (
-          <Leads leadId={route[1]} />
-        ) : view === "agent" ? (
-          <Agent />
-        ) : view === "soon" ? (
-          <Future sectionKey={route[1]} />
-        ) : (
-          <Finder />
-        )}
+        {/* Keyed by workspace so lead lists and details reload on a switch. */}
+        <div key={workspace.key ?? "demo"} className="contents">
+          {view === "leads" ? (
+            <Leads leadId={route[1]} />
+          ) : view === "agent" ? (
+            <Agent />
+          ) : view === "soon" ? (
+            <Future sectionKey={route[1]} />
+          ) : (
+            <Finder />
+          )}
+        </div>
       </main>
       <PropertyDrawer />
       <BbbDialog />
