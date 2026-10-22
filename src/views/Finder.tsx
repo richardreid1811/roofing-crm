@@ -80,8 +80,11 @@ export default function Finder() {
       ],
       { padding: [8, 8] },
     );
-    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+    L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
       maxZoom: 19,
+      // The page sends no Referer (index.html, for the Hugging Face model CDN); OSM's tile policy
+      // requires one, so tiles carry the site origin.
+      referrerPolicy: "strict-origin-when-cross-origin",
       attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
     }).addTo(m);
     // Travis County (Census TIGER/Line boundary): land outside it is lightly shaded, the line drawn on top.
