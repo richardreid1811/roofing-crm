@@ -1,5 +1,6 @@
 // CRM lead records: pipeline by stage, search, and a detail panel to work a lead.
 import { useCallback, useEffect, useState } from "react";
+import { permitStatusLabel, roofAgeText } from "../../shared/display";
 import { PRIORITIES, STAGE_LABEL, STAGES, type Lead, type LeadEvent, type Stage } from "../../shared/leads";
 import { api } from "../api";
 import { loadRatings } from "../bbb";
@@ -136,9 +137,11 @@ function Why({ lead }: { lead: Lead }) {
   const s = lead.signals;
   const parts: string[] = [];
   if (s.roof_age_years != null)
-    parts.push(`Roof ~${s.roof_age_years} yrs (${label(s.roof_age_confidence).toLowerCase()})`);
+    parts.push(`Roof ${roofAgeText(s).replace(/^(\d)/, "~$1")} (${label(s.roof_age_confidence).toLowerCase()})`);
   if (s.open_permit_years != null)
-    parts.push(`Permit open ${s.open_permit_years} yrs${s.open_permit_status ? ` · ${s.open_permit_status}` : ""}`);
+    parts.push(
+      `Permit open ${s.open_permit_years} yrs${s.open_permit_status ? ` · ${permitStatusLabel(s.open_permit_status, null, true)}` : ""}`,
+    );
   if (s.severe_hail_reports) parts.push(`${s.severe_hail_reports} severe hail report(s)`);
   return <>{parts.length ? parts.join(" · ") : "—"}</>;
 }
@@ -288,13 +291,13 @@ function LeadDetail({ id, onChanged }: { id: string; onChanged: () => Promise<vo
       <dl className="facts">
         <dt>Roof age</dt>
         <dd>
-          {s.roof_age_years != null ? `${s.roof_age_years} years` : "Unknown"} · {label(s.roof_age_basis)} (
+          {s.roof_age_years != null ? roofAgeText(s).replace("yrs", "years") : "Unknown"} · {label(s.roof_age_basis)} (
           {label(s.roof_age_confidence)})
         </dd>
         <dt>Open permit</dt>
         <dd>
           {s.open_permit_number
-            ? `${s.open_permit_number} · ${fmt(s.open_permit_status)} · ${fmt(s.open_permit_years)} years open`
+            ? `${s.open_permit_number} · ${permitStatusLabel(s.open_permit_status, null, true)} · ${fmt(s.open_permit_years)} years open`
             : "None"}
         </dd>
         <dt>Contractor</dt>

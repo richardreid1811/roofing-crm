@@ -1,6 +1,7 @@
 // Property and permit detail: roof-age evidence, owner, hail and every roofing permit with
 // status, open duration, contractor, registry identity and BBB, plus "Save as lead".
 import { useEffect, useState } from "react";
+import { permitStatusLabel, roofAgeText } from "../../shared/display";
 import { propertyPermitsSql, propertySql, type Row } from "../../shared/tools";
 import { loadRatings, recordedRating } from "../bbb";
 import { query } from "../db";
@@ -115,9 +116,11 @@ export default function PropertyDrawer() {
             <dl className="facts">
               <dt>Estimated roof age</dt>
               <dd>
-                {prop.roof_age_years != null
-                  ? `${fmt(prop.roof_age_years)} years (roof year ${year(prop.roof_year)})`
-                  : "Unknown"}
+                {prop.roof_age_years == null
+                  ? "Unknown"
+                  : roofAgeText(prop).startsWith("≥")
+                    ? `${roofAgeText(prop).replace("yrs", "years")}: from the year built, so the true roof age is unknown`
+                    : `${fmt(prop.roof_age_years)} years (roof year ${year(prop.roof_year)})`}
               </dd>
               <dt>Evidence</dt>
               <dd>
@@ -186,7 +189,7 @@ export default function PropertyDrawer() {
                     </a>
                   </strong>
                   <span className={`tag ${p.is_open ? "permit" : "closed"}`}>
-                    {fmt(p.status)} · {label(p.status_bucket)}
+                    {permitStatusLabel(p.status, p.status_bucket)}
                   </span>
                 </div>
                 <div className="small muted">

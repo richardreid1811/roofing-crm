@@ -4,6 +4,15 @@ import markerIcon from "leaflet/dist/images/marker-icon.png";
 import markerShadow from "leaflet/dist/images/marker-shadow.png";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { coverageNoteFor } from "../../shared/coverage";
+import { permitStatusLabel, roofAgeText, sortRows, type SortKey } from "../../shared/display";
+import {
+  DEFAULT_FILTERS,
+  isDefaultView,
+  parseFinderState,
+  type Center,
+  type Filters,
+  type FinderState,
+} from "../../shared/finder-state";
 import { COUNTY, inCounty, LEAD_SCORE_EXPLAINED, type Row } from "../../shared/tools";
 import { query, runTool } from "../db";
 import { fmt, label, toLeadInput } from "../format";
@@ -14,70 +23,72 @@ import BbbCell from "../components/BbbCell";
 // Bundlers break Leaflet's CSS-relative default icon paths; point them at the bundled images.
 L.Icon.Default.mergeOptions({ iconRetinaUrl: markerIcon2x, iconUrl: markerIcon, shadowUrl: markerShadow });
 
-type Center = { lat: number; lon: number; label: string };
-type SortKey = "lead_score" | "roof_age_years" | "oldest_open_years" | "distance_miles";
-type Filters = {
-  radius: number;
-  ageOn: boolean;
-  age: number;
-  permitOn: boolean;
-  permitYears: number;
-  statusOpen: boolean;
-  statusExpired: boolean;
-  hailOn: boolean;
-  match: "any" | "all";
-  residential: boolean;
-};
-const DEFAULT_FILTERS: Filters = {
-  radius: 1.5,
-  ageOn: true,
-  age: 15,
-  permitOn: true,
-  permitYears: 0,
-  statusOpen: true,
-  statusExpired: true,
-  hailOn: false,
-  match: "any",
-  residential: false,
-};
+// The search survives leaving the finder (module memory) and reloads in this tab (sessionStorage,
+// which can be unavailable or full: storage errors only lose persistence, never the page).
+const STORAGE_KEY = "travis-crm:finder";
+let remembered: FinderState | null = null;
+function loadFinderState(): FinderState {
+  if (remembered) return remembered;
+  try {
+    remembered = parseFinderState(sessionStorage.getItem(STORAGE_KEY));
+  } catch {
+    remembered = parseFinderState(null);
+  }
+  return remembered;
+}
+function saveFinderState(s: FinderState) {
+  remembered = s;
+  try {
+    sessionStorage.setItem(STORAGE_KEY, JSON.stringify(s));
+  } catch {
+    /* private mode or quota: keep the in-memory copy */
+  }
+}
 const ROW_LIMIT = 200;
 
 export default function Finder() {
   const { dbReady, loadError, retryLoad, snapshot, saveLeads, leadsByProp, openProperty, toast } = useApp();
-  const [center, setCenter] = useState<Center>({ ...COUNTY.defaultPin });
-  const [place, setPlace] = useState("");
-  const [f, setF] = useState<Filters>(DEFAULT_FILTERS);
+  const [initial] = useState(loadFinderState);
+  const [center, setCenter] = useState<Center>(initial.center);
+  const [place, setPlace] = useState(initial.place);
+  const [f, setF] = useState<Filters>(initial.filters);
   const [rows, setRows] = useState<Row[]>([]);
   const [count, setCount] = useState<Row | undefined>();
   const [coverageNote, setCoverageNote] = useState<string | undefined>();
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [sort, setSort] = useState<SortKey>("lead_score");
+  const [sort, setSort] = useState<SortKey>(initial.sort);
   const [locating, setLocating] = useState(false);
   const set = <K extends keyof Filters>(k: K, v: Filters[K]) => setF((x) => ({ ...x, [k]: v }));
+  useEffect(() => saveFinderState({ center, filters: f, sort, place }), [center, f, sort, place]);
 
   // ---- map
   const mapEl = useRef<HTMLDivElement>(null);
   const map = useRef<L.Map | null>(null);
   const areaLayer = useRef<L.LayerGroup | null>(null);
   const rowLayer = useRef<L.LayerGroup | null>(null);
+  // The default search opens on the whole county; a restored or changed search zooms to its circle.
+  const fitCircle = useRef(!isDefaultView(initial));
   useEffect(() => {
     if (!mapEl.current || map.current) return;
-    const m = L.map(mapEl.current, { zoomControl: true }).setView([COUNTY.defaultPin.lat, COUNTY.defaultPin.lon], 14);
-    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-      maxZoom: 19,
-      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
-    }).addTo(m);
-    // County extent so the default view reads as "Travis County".
     const b = COUNTY.bounds;
-    L.rectangle(
+    const m = L.map(mapEl.current, { zoomControl: true }).fitBounds(
       [
         [b.minLat, b.minLon],
         [b.maxLat, b.maxLon],
       ],
-      { color: "#7a5c4f", weight: 1, dashArray: "4 4", fill: false, interactive: false },
-    ).addTo(m);
+      { padding: [8, 8] },
+    );
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      maxZoom: 19,
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+    }).addTo(m);
+    // Travis County (Census TIGER/Line boundary): land outside it is lightly shaded, the line drawn on top.
+    const county = COUNTY.boundary.map(([lon, lat]) => L.latLng(lat, lon));
+    const world = [L.latLng(-85, -180), L.latLng(85, -180), L.latLng(85, 180), L.latLng(-85, 180)];
+    L.polygon([world, county], { stroke: false, fillColor: "#1f1a17", fillOpacity: 0.07, interactive: false }).addTo(m);
+    L.polyline(county, { color: "#7a5c4f", weight: 2, opacity: 0.75, interactive: false }).addTo(m);
     areaLayer.current = L.layerGroup().addTo(m);
     rowLayer.current = L.layerGroup().addTo(m);
     m.on("click", (e: L.LeafletMouseEvent) => {
@@ -102,7 +113,8 @@ export default function Finder() {
       fillOpacity: 0.05,
       interactive: false,
     }).addTo(layer);
-    map.current?.fitBounds(circle.getBounds(), { padding: [12, 12] });
+    if (fitCircle.current) map.current?.fitBounds(circle.getBounds(), { padding: [12, 12] });
+    fitCircle.current = true;
     const pin = L.marker([center.lat, center.lon], { draggable: true, title: "Search center (drag to move)" })
       .bindTooltip(center.label)
       .addTo(layer);
@@ -131,6 +143,8 @@ export default function Finder() {
         weight: saved ? 2 : 1,
         fillColor: markerColor(r),
         fillOpacity: 0.85,
+        // A marker click opens the property; it must not also reach the map and move the search pin.
+        bubblingMouseEvents: false,
       })
         .bindTooltip(`${String(r.situs_address ?? "")} · score ${fmt(r.lead_score)}`)
         .on("click", () => openProperty(String(r.prop_id)))
@@ -145,6 +159,7 @@ export default function Finder() {
       longitude: center.lon,
       radius_miles: f.radius,
       roof_older_than_years: f.ageOn ? f.age : undefined,
+      min_roof_age_confidence: f.ageOn && f.minConfidence !== "very_low" ? f.minConfidence : undefined,
       open_permit_min_years: f.permitOn ? f.permitYears : undefined,
       permit_statuses: [...(f.statusOpen ? ["open"] : []), ...(f.statusExpired ? ["expired_unfinaled"] : [])],
       hail_since_roof: f.hailOn,
@@ -216,10 +231,7 @@ export default function Finder() {
     );
   }
 
-  const sorted = useMemo(() => {
-    const dir = sort === "distance_miles" ? 1 : -1;
-    return [...rows].sort((a, b) => dir * ((Number(a[sort] ?? -1) || 0) - (Number(b[sort] ?? -1) || 0)));
-  }, [rows, sort]);
+  const sorted = useMemo(() => sortRows(rows, sort), [rows, sort]);
   const savable = sorted.filter((r) => !leadsByProp.has(String(r.prop_id)));
   const allSelected = savable.length > 0 && savable.every((r) => selected.has(String(r.prop_id)));
 
@@ -305,6 +317,18 @@ export default function Finder() {
             />
             years
           </label>
+          <label className={`sub field small ${f.ageOn ? "" : "dim"}`}>
+            <span>Roof-age evidence</span>
+            <select
+              value={f.minConfidence}
+              disabled={!f.ageOn}
+              onChange={(e) => set("minConfidence", e.target.value as Filters["minConfidence"])}
+            >
+              <option value="very_low">Any evidence</option>
+              <option value="low">Not very low (built over 50 yrs ago)</option>
+              <option value="medium">Re-roof permits only</option>
+            </select>
+          </label>
           <label className="check">
             <input type="checkbox" checked={f.permitOn} onChange={(e) => set("permitOn", e.target.checked)} />
             Open roofing permit, open at least
@@ -358,12 +382,21 @@ export default function Finder() {
           </label>
         </fieldset>
         <div className="row gap">
-          <button className="ghost small" onClick={() => setF(DEFAULT_FILTERS)}>
+          <button
+            className="ghost small"
+            onClick={() => {
+              setF(DEFAULT_FILTERS);
+              setSort("lead_score");
+            }}
+          >
             Reset filters
           </button>
           <button
             className="ghost small"
-            onClick={() => setF((x) => ({ ...x, ageOn: false, permitOn: true, permitYears: 5, hailOn: false }))}
+            onClick={() => {
+              setF((x) => ({ ...x, ageOn: false, permitOn: true, permitYears: 5, hailOn: false }));
+              setSort("oldest_open_years");
+            }}
           >
             Long-open permits only
           </button>
@@ -478,14 +511,16 @@ export default function Finder() {
                       <Signals row={r} />
                     </td>
                     <td>
-                      <div>{r.roof_age_years != null ? `${fmt(r.roof_age_years)} yrs` : "—"}</div>
+                      <div title={label(r.roof_age_basis)}>{roofAgeText(r)}</div>
                       <div className="muted small">{label(r.roof_age_confidence)} confidence</div>
                     </td>
                     <td>
                       {r.oldest_open_permit ? (
                         <>
                           <div>{fmt(r.oldest_open_years)} yrs open</div>
-                          <div className="muted small">{fmt(r.oldest_open_status)}</div>
+                          <div className="muted small">
+                            {permitStatusLabel(r.oldest_open_status, r.oldest_open_status_bucket, true)}
+                          </div>
                         </>
                       ) : (
                         <span className="muted">—</span>

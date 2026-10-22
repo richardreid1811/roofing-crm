@@ -18,6 +18,8 @@ export class ApiError extends Error {
   constructor(
     message: string,
     readonly status: number,
+    /** Machine-readable error from the Worker, e.g. "ai_allocation_exhausted". */
+    readonly code?: string,
   ) {
     super(message);
   }
@@ -30,7 +32,7 @@ async function call<T>(path: string, init?: RequestInit): Promise<T> {
   });
   if (res.status === 204) return undefined as T;
   const body = (await res.json().catch(() => ({}))) as { message?: string; error?: string };
-  if (!res.ok) throw new ApiError(body.message ?? body.error ?? `HTTP ${res.status}`, res.status);
+  if (!res.ok) throw new ApiError(body.message ?? body.error ?? `HTTP ${res.status}`, res.status, body.error);
   return body as T;
 }
 

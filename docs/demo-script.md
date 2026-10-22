@@ -3,8 +3,8 @@
 Follows the README's demo transcript. Open https://travis-roofing-crm.travis-oracle-web.workers.dev and
 wait for the top-right chip to read "Data: snapshot …" before recording.
 
-1. **Open the CRM on Travis County (30 s).** Point out the county chip, the dashed county extent on the map
-   and the default pin at downtown Austin. Click the data chip to show the snapshot, manifest CID and the
+1. **Open the CRM on Travis County (30 s).** Point out the county chip, the Travis County boundary on the map
+   (Census TIGER/Line) and the default pin at downtown Austin. Click the data chip to show the snapshot, manifest CID and the
    tables read from IPFS, then close it.
    > "The CRM consumes the published Travis County snapshot; ingestion is a separate pipeline."
 2. **Drop a pin and set a radius (45 s).** Click a spot in north-central Austin (e.g. Allandale) to drop

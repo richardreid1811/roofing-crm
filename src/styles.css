@@ -459,6 +459,10 @@ legend {
   font-weight: 600;
   z-index: 1;
 }
+.leads-tbl th,
+.leads-tbl td {
+  padding: 7px 6px;
+}
 .tbl tr.clickable {
   cursor: pointer;
 }
@@ -767,6 +771,12 @@ legend {
 .msg.error {
   background: #fdecea;
   color: var(--danger);
+}
+.msg.notice {
+  align-self: stretch;
+  background: #fff7e6;
+  border: 1px solid #f3d29b;
+  color: #7a4b00;
 }
 .msg.tool {
   border: 1px dashed var(--line);

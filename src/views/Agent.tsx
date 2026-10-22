@@ -3,8 +3,10 @@
 // SQL and results, and result rows can be saved as CRM leads.
 import { Fragment, useState } from "react";
 import { coverageNoteFor } from "../../shared/coverage";
+import { permitStatusLabel, roofAgeText } from "../../shared/display";
+import { runFallback } from "../../shared/fallback";
 import type { Row } from "../../shared/tools";
-import { api } from "../api";
+import { api, ApiError } from "../api";
 import BbbCell from "../components/BbbCell";
 import { query, runTool } from "../db";
 import { fmt, label, toLeadInput } from "../format";
@@ -34,7 +36,13 @@ type Turn =
       error?: string;
       coverageNote?: string;
     }
+  | { kind: "notice"; text: string }
   | { kind: "error"; text: string };
+
+const ALLOWANCE_NOTE =
+  "The free AI allowance for today is used up (resets 00:00 UTC). Showing a direct search instead.";
+const isAllowanceExhausted = (e: unknown) =>
+  e instanceof ApiError && e.status === 503 && e.code === "ai_allocation_exhausted";
 
 const MAX_STEPS = 5;
 const MAX_ROWS_TO_MODEL = 12;
@@ -97,6 +105,7 @@ export default function Agent() {
     let msgs: Msg[] = [...history, { role: "user", content: question }];
     let mode: "auto" | "answer" = "auto";
     let finalText = "";
+    let ranTool = false;
     try {
       for (let step = 0; step < MAX_STEPS; step++) {
         const out = await api.chat(msgs, mode);
@@ -119,6 +128,7 @@ export default function Agent() {
             const res = await runTool(call.toolName, call.input);
             // Deterministic caveat: share of the searched area without permit history.
             const coverageNote = await coverageNoteFor(call.toolName, res.args, res.rows, query).catch(() => undefined);
+            ranTool = true;
             setTurns((t) => [
               ...t,
               {
@@ -162,7 +172,8 @@ export default function Agent() {
         mode = "answer";
       }
     } catch (e) {
-      setTurns((t) => [...t, { kind: "error", text: String((e as Error).message ?? e) }]);
+      if (isAllowanceExhausted(e)) await directSearch(question, ranTool);
+      else setTurns((t) => [...t, { kind: "error", text: String((e as Error).message ?? e) }]);
     } finally {
       // Carry only the text of earlier exchanges into the next question.
       setHistory((h) =>
@@ -176,6 +187,44 @@ export default function Agent() {
     }
   }
 
+  // No model available: a rule-based reading of the question runs the same tool through the same runner.
+  async function directSearch(question: string, alreadySearched: boolean) {
+    if (alreadySearched) {
+      setTurns((t) => [
+        ...t,
+        {
+          kind: "notice",
+          text: "The free AI allowance for today is used up (resets 00:00 UTC). The search results above are shown without a written answer.",
+        },
+      ]);
+      return;
+    }
+    setTurns((t) => [...t, { kind: "notice", text: ALLOWANCE_NOTE }]);
+    try {
+      const { plan, result, place, placeNote } = await runFallback(question, (tool, args) => runTool(tool, args));
+      const coverageNote = await coverageNoteFor(plan.tool, result.args, result.rows, query).catch(() => undefined);
+      const total = result.count?.matches;
+      setTurns((t) => [
+        ...t,
+        {
+          kind: "notice",
+          text: `Direct search: ${plan.summary}, within ${fmt(result.args.radius_miles)} mi of ${place}.${placeNote ? ` ${placeNote}` : ""} ${fmt(total ?? result.rows.length)} match${Number(total ?? result.rows.length) === 1 ? "" : "es"}${total !== undefined && Number(total) > result.rows.length ? `; showing the top ${result.rows.length}` : ""}.`,
+        },
+        {
+          kind: "tool",
+          name: plan.tool,
+          args: result.args,
+          rows: result.rows,
+          total,
+          sql: result.sql,
+          coverageNote,
+        },
+      ]);
+    } catch (e) {
+      setTurns((t) => [...t, { kind: "error", text: `Direct search failed: ${String((e as Error).message ?? e)}` }]);
+    }
+  }
+
   return (
     <div className="agent">
       <section className="card">
@@ -183,7 +232,8 @@ export default function Agent() {
         <p className="muted small">
           Ask in plain English. Llama 3.3 70B (Cloudflare Workers AI) chooses a search; the search runs as SQL in your
           browser over the published Travis County snapshot, and the answer cites those records. Save any result as a
-          lead from the table under each search.
+          lead from the table under each search. When the day&apos;s free AI allowance is used up, a question runs as a
+          direct search (place, radius, years and intent read from the wording) instead.
         </p>
         <div className="examples">
           {EXAMPLES.map((q) => (
@@ -202,6 +252,10 @@ export default function Agent() {
           ) : t.kind === "assistant" ? (
             <div key={i} className="msg assistant">
               <Rich text={t.text} />
+            </div>
+          ) : t.kind === "notice" ? (
+            <div key={i} className="msg notice">
+              {t.text}
             </div>
           ) : t.kind === "error" ? (
             <div key={i} className="msg error">
@@ -318,7 +372,7 @@ function ToolTurn({ turn }: { turn: Extract<Turn, { kind: "tool" }> }) {
                       </td>
                       <td>{fmt(r.situs_address ?? r.address)}</td>
                       <td title={r.roof_age_basis ? label(r.roof_age_basis) : undefined}>
-                        {r.roof_age_years != null ? `${fmt(r.roof_age_years)} yrs` : "—"}
+                        {roofAgeText(r)}
                         {r.roof_age_confidence ? (
                           <div className="muted small">{label(r.roof_age_confidence)} confidence</div>
                         ) : null}
@@ -328,7 +382,11 @@ function ToolTurn({ turn }: { turn: Extract<Turn, { kind: "tool" }> }) {
                           <>
                             {fmt(r.permit_number ?? r.oldest_open_permit)}
                             <div className="muted">
-                              {fmt(r.status ?? r.oldest_open_status)}
+                              {permitStatusLabel(
+                                r.status ?? r.oldest_open_status,
+                                r.status_bucket ?? r.oldest_open_status_bucket,
+                                true,
+                              )}
                               {r.open_years != null || r.oldest_open_years != null
                                 ? ` · ${fmt(r.open_years ?? r.oldest_open_years)} yrs open`
                                 : ""}

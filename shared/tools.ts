@@ -4,6 +4,7 @@
 // contract: leads, roofing_permits, contractors, hail_events, permit_embeddings, plus `places`
 // (built at load time by PLACES_SQL). SQL builders interpolate only schema-validated values.
 import { z } from "zod";
+import { TRAVIS_BOUNDARY } from "./county-boundary";
 
 // ---------------------------------------------------------------------------------------------
 // Input coercion. Llama sends numbers and booleans as strings and empty strings for "not set".
@@ -24,18 +25,54 @@ const isoDate = () =>
   );
 
 // Travis County area. Coordinates outside it are rejected, never clamped (clamping would silently
-// search a different place).
+// search a different place). "Inside" means inside the Census county polygon, not its bounding box.
 export const COUNTY = {
   name: "Travis County, TX",
   center: { lat: 30.3, lon: -97.75 },
   defaultPin: { lat: 30.2672, lon: -97.7431, label: "Downtown Austin" },
-  bounds: { minLat: 29.9, maxLat: 30.7, minLon: -98.3, maxLon: -97.3 },
+  /** Extent of the county polygon (cheap pre-check and the map's default view). */
+  bounds: { minLat: 30.02345, maxLat: 30.62825, minLon: -98.17298, maxLon: -97.36954 },
+  boundary: TRAVIS_BOUNDARY,
 };
+
+/** Even-odd ray casting over a closed ring of [lon, lat]. */
+export function inRing(lat: number, lon: number, ring: readonly (readonly [number, number])[]): boolean {
+  let inside = false;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const [xi, yi] = ring[i];
+    const [xj, yj] = ring[j];
+    if (yi > lat !== yj > lat && lon < ((xj - xi) * (lat - yi)) / (yj - yi) + xi) inside = !inside;
+  }
+  return inside;
+}
+/** Shortest distance in miles from a point to a ring's edges (equirectangular; fine at county scale). */
+export function milesToRing(lat: number, lon: number, ring: readonly (readonly [number, number])[]): number {
+  const k = Math.cos((lat * Math.PI) / 180);
+  let best = Infinity;
+  for (let i = 0; i < ring.length - 1; i++) {
+    const ax = ring[i][0] * k;
+    const ay = ring[i][1];
+    const dx = ring[i + 1][0] * k - ax;
+    const dy = ring[i + 1][1] - ay;
+    const px = lon * k - ax;
+    const py = lat - ay;
+    const t = Math.max(0, Math.min(1, (px * dx + py * dy) / (dx * dx + dy * dy || 1)));
+    best = Math.min(best, Math.hypot(px - t * dx, py - t * dy));
+  }
+  return best * 69.0;
+}
+// TCAD geocodes and the Round Rock and Buda slivers' parcel centroids sit up to a few hundred metres
+// past the simplified line, so points this close to the edge still count as in the county.
+export const COUNTY_EDGE_TOLERANCE_MILES = 0.25;
+const MARGIN = 0.01; // degrees, > the tolerance, for the bounding-box pre-check
 export const inCounty = (lat: number, lon: number) =>
-  lat >= COUNTY.bounds.minLat &&
-  lat <= COUNTY.bounds.maxLat &&
-  lon >= COUNTY.bounds.minLon &&
-  lon <= COUNTY.bounds.maxLon;
+  Number.isFinite(lat) &&
+  Number.isFinite(lon) &&
+  lat >= COUNTY.bounds.minLat - MARGIN &&
+  lat <= COUNTY.bounds.maxLat + MARGIN &&
+  lon >= COUNTY.bounds.minLon - MARGIN &&
+  lon <= COUNTY.bounds.maxLon + MARGIN &&
+  (inRing(lat, lon, COUNTY.boundary) || milesToRing(lat, lon, COUNTY.boundary) <= COUNTY_EDGE_TOLERANCE_MILES);
 
 const pointShape = {
   place: z
@@ -78,6 +115,7 @@ const within = (p: Point, latCol = "latitude", lonCol = "longitude") =>
 // Ownership tenure in whole years as of today.
 const tenure = (col = "deed_date") => `cast(floor(date_diff('day', ${col}, current_date) / 365.2425) as integer)`;
 const CONFIDENCE_ORDER = `case roof_age_confidence when 'high' then 0 when 'medium' then 1 when 'low' then 2 else 3 end`;
+export const CONFIDENCE_LEVELS = ["high", "medium", "low", "very_low"] as const;
 const RESIDENTIAL = `(imprv_state_cd like 'A%' or imprv_state_cd like 'B%' or imprv_state_cd like 'E%')`;
 // Roofing permits that represent roof work (not solar or electrical work on roofs).
 const ROOF_WORK = `roofing_work in ('roof_replacement', 'roof_repair')`;
@@ -107,6 +145,12 @@ export const findLeadsSchema = z.object({
     .default("any")
     .describe("'any' = a property matches any enabled criterion; 'all' = every enabled criterion."),
   residential_only: optBool().describe("Only residential properties (TCAD state codes A, B, E)."),
+  min_roof_age_confidence: z
+    .enum(CONFIDENCE_LEVELS)
+    .optional()
+    .describe(
+      "Only count a roof as aged when its age evidence is at least this confident: high (finaled re-roof permit), medium, low (year built), very_low (year built over 50 years ago). Default: any.",
+    ),
 });
 export type FindLeadsArgs = z.infer<typeof findLeadsSchema>;
 
@@ -114,7 +158,13 @@ function findLeadsParts(a: FindLeadsArgs) {
   const p = point(a);
   const statuses = a.permit_statuses ?? [...OPEN_BUCKETS];
   const conds: string[] = [];
-  if (a.roof_older_than_years !== undefined) conds.push(`l.roof_age_years > ${a.roof_older_than_years}`);
+  const minConf = CONFIDENCE_LEVELS.indexOf(a.min_roof_age_confidence ?? "very_low");
+  const confOk =
+    minConf >= 3
+      ? ""
+      : ` and ${CONFIDENCE_ORDER.replace("case roof_age_confidence", "case l.roof_age_confidence")} <= ${minConf}`;
+  const aged = (cut: number | string) => `l.roof_age_years > ${cut}${confOk}`;
+  if (a.roof_older_than_years !== undefined) conds.push(aged(a.roof_older_than_years));
   if (a.open_permit_min_years !== undefined)
     conds.push(`perm.oldest_open_days >= ${Math.round(a.open_permit_min_years * 365.25)}`);
   if (a.hail_since_roof) conds.push(`l.severe_hail_reports_since_roof > 0`);
@@ -131,6 +181,7 @@ function findLeadsParts(a: FindLeadsArgs) {
              max(date_diff('day', opened_date, current_date)) as oldest_open_days,
              arg_min(permit_number, opened_date::varchar || permit_number) as oldest_open_permit,
              arg_min(status, opened_date::varchar || permit_number) as oldest_open_status,
+             arg_min(status_bucket, opened_date::varchar || permit_number) as oldest_open_status_bucket,
              arg_min(contractor_company_name, opened_date::varchar || permit_number) as oldest_open_contractor,
              arg_min(contractor_key, opened_date::varchar || permit_number) as oldest_open_contractor_key
       from roofing_permits
@@ -140,8 +191,8 @@ function findLeadsParts(a: FindLeadsArgs) {
     base as (
       -- leads carries its own oldest_open_* columns (all open statuses); use the status-filtered ones from perm.
       select l.* exclude (oldest_open_permit, oldest_open_contractor, oldest_open_date), perm.open_permits, perm.expired_unfinaled_permits, perm.oldest_open_date, perm.oldest_open_days,
-             perm.oldest_open_permit, perm.oldest_open_status, perm.oldest_open_contractor, perm.oldest_open_contractor_key,
-             coalesce(l.roof_age_years > ${ageCut}, false) as signal_aged_roof,
+             perm.oldest_open_permit, perm.oldest_open_status, perm.oldest_open_status_bucket, perm.oldest_open_contractor, perm.oldest_open_contractor_key,
+             coalesce(${aged(ageCut)}, false) as signal_aged_roof,
              coalesce(perm.oldest_open_days >= ${permitCut}, false) as signal_open_permit,
              ${a.hail_since_roof ? "coalesce(l.severe_hail_reports_since_roof > 0, false)" : "false"} as signal_hail
       from leads l left join perm using (prop_id)
@@ -158,7 +209,7 @@ export const LEAD_SCORE_SQL = `round(
   + case when signal_open_permit then 20 + 3 * least(oldest_open_days / 365.25, 10) else 0 end
   + case when signal_hail then 10 * least(severe_hail_reports_since_roof, 3) else 0 end)`;
 export const LEAD_SCORE_EXPLAINED =
-  "Score = roof age (capped at 40) × evidence confidence (high 1, medium 0.9, low 0.7, very low 0.5) when the roof is over the threshold, + 20 + 3 per year open (capped at 10 years) for an open roofing permit, + 10 per severe hail report since the roof (up to 3).";
+  "Score = roof age (capped at 40) × evidence confidence (high 1, medium 0.9, low 0.7, very low 0.5) when the roof is over the threshold, + 20 + 3 per year open (capped at 10 years) for an open roofing permit, + 10 per severe hail report since the roof (up to 3). Equal scores rank the longest-open permit first.";
 
 export function findLeadsSql(a: FindLeadsArgs): string {
   const { p, ctes } = findLeadsParts(a);
@@ -168,14 +219,15 @@ export function findLeadsSql(a: FindLeadsArgs): string {
            b.signal_aged_roof, b.signal_open_permit, b.signal_hail,
            b.roof_age_years, b.roof_year, b.roof_age_basis, b.roof_age_confidence, b.roof_covering, b.year_built,
            coalesce(b.open_permits, 0) as open_permits, coalesce(b.expired_unfinaled_permits, 0) as expired_unfinaled_permits,
-           b.oldest_open_permit, b.oldest_open_status, b.oldest_open_date, round(b.oldest_open_days / 365.25, 1) as oldest_open_years,
+           b.oldest_open_permit, b.oldest_open_status, b.oldest_open_status_bucket, b.oldest_open_date, round(b.oldest_open_days / 365.25, 1) as oldest_open_years,
            b.oldest_open_contractor, b.oldest_open_contractor_key as contractor_key, c.legal_name as contractor_legal_name, c.identity_status as contractor_identity,
            c.bbb_rating, c.bbb_status,
            b.severe_hail_reports_since_roof, b.max_hail_inches_since_roof, b.last_severe_hail_date_since_roof,
            b.owner_name, b.owner_mail_region, b.permit_history_coverage, b.imprv_state_cd,
            b.latitude, b.longitude, b.source_detail_url
     from base b left join contractors c on c.contractor_key = b.oldest_open_contractor_key
-    order by lead_score desc, distance_miles, b.prop_id
+    -- The permit term caps at 10 years, so equal scores rank the longest-open permit first.
+    order by lead_score desc, b.oldest_open_days desc nulls last, distance_miles, b.prop_id
     limit ${lim(a.limit)}`;
 }
 

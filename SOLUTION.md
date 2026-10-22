@@ -36,7 +36,7 @@ snapshot to IPFS. This repo does not gather or ingest data.
 
 | Criterion                                                  | How it is met                                                                                                                                                                                                                                                               |
 | ---------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Default to a county; explore the selected area             | Opens on Travis County (county extent drawn, default pin downtown Austin). Place search accepts cities, ZIPs and Austin neighborhoods; coordinates outside the county are rejected, not clamped                                                                             |
+| Default to a county; explore the selected area             | Opens on Travis County (Census TIGER/Line county boundary drawn, default pin downtown Austin). Place search accepts cities, ZIPs and Austin neighborhoods; coordinates outside the county are rejected, not clamped                                                         |
 | Center on GPS and/or a dropped pin                         | **Use my location** (browser geolocation, checked against the county) and click-to-drop or drag the pin                                                                                                                                                                     |
 | Configurable radius                                        | Slider from 0.25 to 10 miles; the map fits the radius circle                                                                                                                                                                                                                |
 | Roofs older than a configurable threshold (default 15)     | `Roof older than N years`, strictly older. Roof age comes from a finaled re-roof permit (high confidence), an unfinaled one (medium) or TCAD year built (low / very low), and the basis is shown on every row                                                               |
@@ -85,7 +85,8 @@ Following the Soofi team kit's engineering guidelines where they apply: TypeScri
 **Vercel AI SDK** for every LLM call with **Zod** tool schemas and no `any`, Vitest, ESLint, Prettier and tsc
 in GitHub Actions CI, no secrets or PII in logs (structured JSON error events only), and a documented
 timeout and recovery for the one synchronous external call (Workers AI: 30 s timeout, one retry, clear
-messages for timeouts and an exhausted daily allocation; search, map and leads keep working without it).
+messages for timeouts; when the daily allocation is exhausted the assistant runs a rule-based direct search
+of the question instead, and search, map and leads keep working without it).
 
 Deviations, all because the assignment requires zero ongoing infrastructure cost:
 
