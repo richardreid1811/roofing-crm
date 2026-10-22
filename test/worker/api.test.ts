@@ -57,6 +57,21 @@ describe("leads API", () => {
     expect(detail.events.map((e) => e.kind)).toEqual(["created"]);
   });
 
+  it("saves a full batch of 100 leads in one request and rejects more", async () => {
+    const batch = Array.from({ length: 100 }, (_, i) => lead(String(5000 + i)));
+    const res = await call("/leads", { method: "POST", body: JSON.stringify({ leads: batch }) });
+    expect(res.status).toBe(201);
+    const body = await json<{ created: Lead[]; existing: Lead[] }>(res);
+    expect(body.created).toHaveLength(100);
+    expect(body.created.map((l) => l.prop_id)).toEqual(batch.map((l) => l.prop_id));
+    const detail = await json<{ events: LeadEvent[] }>(await call(`/leads/${body.created[99].id}`));
+    expect(detail.events.map((e) => e.kind)).toEqual(["created"]);
+
+    const tooMany = Array.from({ length: 101 }, (_, i) => lead(String(6000 + i)));
+    const big = await call("/leads", { method: "POST", body: JSON.stringify({ leads: tooMany }) });
+    expect(big.status).toBe(400);
+  });
+
   it("validates input", async () => {
     const bad = [
       { leads: [] },

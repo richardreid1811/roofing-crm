@@ -61,7 +61,9 @@ export const leadInputSchema = z.object({
 });
 export type LeadInput = z.input<typeof leadInputSchema>;
 
-export const createLeadsSchema = z.object({ leads: z.array(leadInputSchema).min(1).max(100) });
+/** Leads per save request (one D1 batch); the client splits larger selections. */
+export const MAX_LEADS_PER_SAVE = 100;
+export const createLeadsSchema = z.object({ leads: z.array(leadInputSchema).min(1).max(MAX_LEADS_PER_SAVE) });
 
 export const leadPatchSchema = z
   .object({

@@ -1,6 +1,6 @@
 // App-wide state: the snapshot pointer, the in-browser database, the saved-lead index and toasts.
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import type { Lead, LeadInput } from "../shared/leads";
+import { MAX_LEADS_PER_SAVE, type Lead, type LeadInput } from "../shared/leads";
 import { api, type Snapshot } from "./api";
 import { initDb, type LoadStep } from "./db";
 
@@ -68,8 +68,17 @@ export function AppProvider({ children }: { children: ReactNode }) {
     async (inputs: LeadInput[]) => {
       if (!inputs.length) return null;
       try {
-        const res = await api.createLeads(inputs);
-        await refreshLeads();
+        // Larger selections go in requests of MAX_LEADS_PER_SAVE; a failure keeps what earlier chunks saved.
+        const res: { created: Lead[]; existing: Lead[] } = { created: [], existing: [] };
+        try {
+          for (let i = 0; i < inputs.length; i += MAX_LEADS_PER_SAVE) {
+            const part = await api.createLeads(inputs.slice(i, i + MAX_LEADS_PER_SAVE));
+            res.created.push(...part.created);
+            res.existing.push(...part.existing);
+          }
+        } finally {
+          await refreshLeads();
+        }
         const parts = [];
         if (res.created.length) parts.push(`${res.created.length} lead${res.created.length > 1 ? "s" : ""} created`);
         if (res.existing.length) parts.push(`${res.existing.length} already in the CRM`);

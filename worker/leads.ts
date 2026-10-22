@@ -70,18 +70,19 @@ leads.post("/", async (c) => {
   if ((total?.n ?? 0) + parsed.data.leads.length > MAX_LEADS)
     return c.json({ error: "full", message: `The demo workspace holds at most ${MAX_LEADS} leads.` }, 409);
 
-  const created: Lead[] = [];
-  const existing: Lead[] = [];
-  for (const input of parsed.data.leads) {
-    const id = crypto.randomUUID();
-    const at = now();
-    // One lead per property: a second save returns the existing record instead of duplicating it.
-    const res = await c.env.DB.prepare(
-      `insert into leads (id, prop_id, address, latitude, longitude, owner_name, permit_number, priority, source,
-                          source_run_id, source_url, signals, created_at, updated_at)
-       values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) on conflict (prop_id) do nothing`,
-    )
-      .bind(
+  // One batch (a single D1 call) for all inserts and their "created" events, then one read: the free
+  // plan allows about 50 D1 calls per request, so per-lead queries failed beyond ~16 leads.
+  // One lead per property: a second save keeps the existing record (on conflict do nothing), and an
+  // event is only written for a row this request inserted (its fresh id exists).
+  const at = now();
+  const fresh = parsed.data.leads.map((input) => ({ id: crypto.randomUUID(), input }));
+  await c.env.DB.batch(
+    fresh.flatMap(({ id, input }) => [
+      c.env.DB.prepare(
+        `insert into leads (id, prop_id, address, latitude, longitude, owner_name, permit_number, priority, source,
+                            source_run_id, source_url, signals, created_at, updated_at)
+         values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) on conflict (prop_id) do nothing`,
+      ).bind(
         id,
         input.prop_id,
         input.address,
@@ -96,16 +97,25 @@ leads.post("/", async (c) => {
         JSON.stringify(input.signals),
         at,
         at,
-      )
-      .run();
-    if (res.meta.changes === 1) {
-      await addEvent(c.env.DB, id, "created", `Created from ${input.source} (snapshot ${input.source_run_id})`);
-      const row = await c.env.DB.prepare("select * from leads where id = ?").bind(id).first<LeadRow>();
-      created.push(toLead(row!));
-    } else {
-      const row = await c.env.DB.prepare("select * from leads where prop_id = ?").bind(input.prop_id).first<LeadRow>();
-      if (row) existing.push(toLead(row));
-    }
+      ),
+      c.env.DB.prepare(
+        "insert into lead_events (lead_id, at, kind, detail) select id, ?, 'created', ? from leads where id = ?",
+      ).bind(at, `Created from ${input.source} (snapshot ${input.source_run_id})`, id),
+    ]),
+  );
+  const propIds = [...new Set(fresh.map((f) => f.input.prop_id))];
+  const { results } = await c.env.DB.prepare(
+    `select * from leads where prop_id in (${propIds.map(() => "?").join(", ")})`,
+  )
+    .bind(...propIds)
+    .all<LeadRow>();
+  const newIds = new Set(fresh.map((f) => f.id));
+  const created: Lead[] = [];
+  const existing: Lead[] = [];
+  const byProp = new Map(results.map((r) => [r.prop_id, r]));
+  for (const propId of propIds) {
+    const row = byProp.get(propId);
+    if (row) (newIds.has(row.id) ? created : existing).push(toLead(row));
   }
   return c.json({ created, existing }, created.length ? 201 : 200);
 });
