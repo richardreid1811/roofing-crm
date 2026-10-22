@@ -6,6 +6,8 @@ import { env, exports } from "cloudflare:workers";
 const worker = (exports as unknown as { default: Fetcher }).default;
 import { beforeAll, describe, expect, it } from "vitest";
 import type { Lead, LeadEvent } from "../../shared/leads";
+import { agentStep, AgentError } from "../../worker/agent";
+import type { Env } from "../../worker/env";
 
 declare module "cloudflare:workers" {
   interface ProvidedEnv {
@@ -142,6 +144,20 @@ describe("other routes", () => {
         (await call("/chat", { method: "POST", body: JSON.stringify(body) })).status,
         JSON.stringify(body).slice(0, 60),
       ).toBe(400);
+  });
+
+  it("maps an exhausted Workers AI allocation to 503 ai_allocation_exhausted (simulated binding)", async () => {
+    const ai = {
+      run: async () => {
+        throw new Error("4006: you have used up your daily free allocation of 10,000 neurons");
+      },
+    };
+    const err = await agentStep({ ...env, AI: ai } as unknown as Env, {
+      messages: [{ role: "user", content: "open permits near Pflugerville" }],
+      mode: "auto",
+    }).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(AgentError);
+    expect(err).toMatchObject({ code: "ai_allocation_exhausted", status: 503 });
   });
 });
 

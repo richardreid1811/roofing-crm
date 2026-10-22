@@ -4,6 +4,12 @@
 // these rules; the UI says that this is a direct search.
 import { COUNTY, type Row, type ToolResult } from "./tools";
 
+export const ALLOWANCE_NOTE =
+  "The free AI allowance for today is used up (resets 00:00 UTC). Showing a direct search instead.";
+/** The Worker's /api/chat answer when the daily Workers AI allocation is used up. */
+export const isAllowanceExhausted = (status: number, code: unknown) =>
+  status === 503 && code === "ai_allocation_exhausted";
+
 export type FallbackPlan = {
   tool: "find_leads" | "aged_roofs_near" | "open_roofing_permits_near" | "hail_exposed_roofs_near";
   /** Tool arguments without the place (that is resolved from `places`). */

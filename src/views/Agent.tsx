@@ -4,7 +4,7 @@
 import { Fragment, useState } from "react";
 import { coverageNoteFor } from "../../shared/coverage";
 import { permitStatusLabel, roofAgeText } from "../../shared/display";
-import { runFallback } from "../../shared/fallback";
+import { ALLOWANCE_NOTE, isAllowanceExhausted, runFallback } from "../../shared/fallback";
 import type { Row } from "../../shared/tools";
 import { api, ApiError } from "../api";
 import BbbCell from "../components/BbbCell";
@@ -39,10 +39,7 @@ type Turn =
   | { kind: "notice"; text: string }
   | { kind: "error"; text: string };
 
-const ALLOWANCE_NOTE =
-  "The free AI allowance for today is used up (resets 00:00 UTC). Showing a direct search instead.";
-const isAllowanceExhausted = (e: unknown) =>
-  e instanceof ApiError && e.status === 503 && e.code === "ai_allocation_exhausted";
+const allowanceExhausted = (e: unknown) => e instanceof ApiError && isAllowanceExhausted(e.status, e.code);
 
 const MAX_STEPS = 5;
 const MAX_ROWS_TO_MODEL = 12;
@@ -172,7 +169,7 @@ export default function Agent() {
         mode = "answer";
       }
     } catch (e) {
-      if (isAllowanceExhausted(e)) await directSearch(question, ranTool);
+      if (allowanceExhausted(e)) await directSearch(question, ranTool);
       else setTurns((t) => [...t, { kind: "error", text: String((e as Error).message ?? e) }]);
     } finally {
       // Carry only the text of earlier exchanges into the next question.

@@ -1,5 +1,5 @@
 import { beforeAll, describe, expect, it } from "vitest";
-import { parseQuestion, runFallback } from "../../shared/fallback";
+import { isAllowanceExhausted, parseQuestion, runFallback } from "../../shared/fallback";
 import { runTool, type Row, type Run } from "../../shared/tools";
 import { fixture, n } from "./fixture";
 
@@ -74,6 +74,21 @@ describe("fallback question parser", () => {
       args: { radius_miles: 3, roof_older_than_years: 15, open_permit_min_years: 0 },
       places: ["Mueller"],
     });
+  });
+});
+
+describe("allowance detection", () => {
+  it("recognizes the Worker's simulated 503 ai_allocation_exhausted reply and nothing else", async () => {
+    const reply = (status: number, error: string) =>
+      new Response(JSON.stringify({ error, message: "…" }), {
+        status,
+        headers: { "content-type": "application/json" },
+      });
+    const check = async (res: Response) => isAllowanceExhausted(res.status, ((await res.json()) as Row).error);
+    expect(await check(reply(503, "ai_allocation_exhausted"))).toBe(true);
+    expect(await check(reply(503, "snapshot_unavailable"))).toBe(false);
+    expect(await check(reply(504, "ai_timeout"))).toBe(false);
+    expect(await check(reply(429, "rate_limited"))).toBe(false);
   });
 });
 
