@@ -28,7 +28,16 @@ let active: string | null = (() => {
   const k = read<string | null>(ACTIVE_KEY, null);
   return k && WORKSPACE_KEY_RE.test(k) ? k : null;
 })();
-let saved: SavedWorkspace[] = read<SavedWorkspace[]>(LIST_KEY, []).filter((w) => WORKSPACE_KEY_RE.test(w?.key));
+// Stored data can be anything (an older version, another tab, a hand edit): keep only well-formed entries.
+const stored = read<unknown>(LIST_KEY, []);
+let saved: SavedWorkspace[] = (Array.isArray(stored) ? stored : []).filter(
+  (w): w is SavedWorkspace =>
+    typeof w === "object" &&
+    w !== null &&
+    typeof (w as SavedWorkspace).key === "string" &&
+    WORKSPACE_KEY_RE.test((w as SavedWorkspace).key) &&
+    typeof (w as SavedWorkspace).name === "string",
+);
 
 /** The key sent with every API request, or null for the demo workspace. */
 export const activeKey = () => active;

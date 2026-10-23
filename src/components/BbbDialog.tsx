@@ -1,6 +1,6 @@
 // Record a contractor's BBB rating as read by a rep on bbb.org. The app links to BBB's own search but
 // never fetches BBB; the rating, accreditation and profile link are whatever the rep enters.
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { BBB_RATING_LABEL, BBB_RATINGS, type BbbRating, type BbbRatingValue } from "../../shared/bbb";
 import { bbbLookupUrl } from "../../shared/tools";
 import { api } from "../api";
@@ -27,17 +27,26 @@ export default function BbbDialog() {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
+  // The dialog stays mounted between contractors: start each one empty and drop a response that
+  // arrives after the dialog moved on, so "remove" only ever acts on this contractor's entries.
+  const target = useRef<string | null>(null);
   useEffect(() => {
+    target.current = bbbTarget?.key ?? null;
+    setHistory([]);
     if (!bbbTarget) return;
     setRating("");
     setAccredited("");
     setProfileUrl("");
     setNote("");
     setErr(null);
-    api
-      .bbbHistory(bbbTarget.key)
-      .then((r) => setHistory(r.history))
-      .catch(() => setHistory([]));
+    let cancelled = false;
+    api.bbbHistory(bbbTarget.key).then(
+      (r) => !cancelled && setHistory(r.history),
+      () => !cancelled && setHistory([]),
+    );
+    return () => {
+      cancelled = true;
+    };
   }, [bbbTarget]);
 
   if (!bbbTarget) return null;
@@ -75,11 +84,14 @@ export default function BbbDialog() {
   }
 
   async function remove(entry: BbbRating) {
+    const key = entry.contractor_key;
     try {
       await api.deleteBbbEntry(entry.id);
+      // `history` is this entry's contractor's list (it is reset per contractor); the cache update goes to
+      // that contractor, and the list only changes if the dialog is still showing it.
       const rest = history.filter((h) => h.id !== entry.id);
-      setHistory(rest);
-      setRecorded(bbbTarget!.key, rest[0] ?? null);
+      setRecorded(key, rest[0] ?? null);
+      if (target.current === key) setHistory(rest);
       bbbChanged();
     } catch (e) {
       setErr(String((e as Error).message ?? e));

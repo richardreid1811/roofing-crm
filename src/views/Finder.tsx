@@ -58,6 +58,7 @@ export default function Finder() {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [saving, setSaving] = useState(false);
   const [sort, setSort] = useState<SortKey>(initial.sort);
   const [locating, setLocating] = useState(false);
   const set = <K extends keyof Filters>(k: K, v: Filters[K]) => setF((x) => ({ ...x, [k]: v }));
@@ -164,7 +165,10 @@ export default function Finder() {
       roof_older_than_years: f.ageOn ? f.age : undefined,
       min_roof_age_confidence: f.ageOn && f.minConfidence !== "very_low" ? f.minConfidence : undefined,
       open_permit_min_years: f.permitOn ? f.permitYears : undefined,
-      permit_statuses: [...(f.statusOpen ? ["open"] : []), ...(f.statusExpired ? ["expired_unfinaled"] : [])],
+      // Only with the permit criterion on: an empty list from a disabled criterion must not fail the search.
+      permit_statuses: f.permitOn
+        ? [...(f.statusOpen ? ["open"] : []), ...(f.statusExpired ? ["expired_unfinaled"] : [])]
+        : undefined,
       hail_since_roof: f.hailOn,
       match: f.match,
       residential_only: f.residential,
@@ -175,7 +179,18 @@ export default function Finder() {
   const noCriteria = !f.ageOn && !f.permitOn && !f.hailOn;
   const noStatus = f.permitOn && !f.statusOpen && !f.statusExpired;
   useEffect(() => {
-    if (!dbReady || noCriteria || noStatus) return;
+    if (!dbReady) return;
+    if (noCriteria || noStatus) {
+      // No search can run: clear the previous results (they no longer match the filters) and any
+      // "Searching…" left by a search this change cancelled.
+      setRows([]);
+      setCount(undefined);
+      setCoverageNote(undefined);
+      setSelected(new Set());
+      setBusy(false);
+      setErr(null);
+      return;
+    }
     let cancelled = false;
     const t = setTimeout(async () => {
       setBusy(true);
@@ -239,13 +254,18 @@ export default function Finder() {
   const allSelected = savable.length > 0 && savable.every((r) => selected.has(String(r.prop_id)));
 
   async function saveSelected() {
-    if (!snapshot) return;
+    if (!snapshot || saving) return; // one save at a time: a second click must not resend the batch
     const inputs = sorted
       .filter((r) => selected.has(String(r.prop_id)))
       .map((r) => toLeadInput(r, snapshot, "finder"))
       .filter((x) => x !== null);
-    const res = await saveLeads(inputs);
-    if (res) setSelected(new Set());
+    setSaving(true);
+    try {
+      const res = await saveLeads(inputs);
+      if (res) setSelected(new Set());
+    } finally {
+      setSaving(false);
+    }
   }
 
   const toggle = (id: string) =>
@@ -453,8 +473,8 @@ export default function Finder() {
             ) : null}
             {!busy && dbReady && count && coverageNote && <p className="small coverage-note">{coverageNote}</p>}
           </div>
-          <button className="primary" disabled={!selected.size} onClick={saveSelected}>
-            Save {selected.size || ""} as lead{selected.size === 1 ? "" : "s"}
+          <button className="primary" disabled={!selected.size || saving} onClick={saveSelected}>
+            {saving ? "Saving…" : `Save ${selected.size || ""} as lead${selected.size === 1 ? "" : "s"}`}
           </button>
         </div>
         <div className="scroll">
