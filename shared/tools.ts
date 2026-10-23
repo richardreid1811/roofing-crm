@@ -335,6 +335,8 @@ export type ToolDef<S extends z.ZodType = z.ZodType> = {
   schema: S;
   sql: (a: z.infer<S>) => string;
   countSql?: (a: z.infer<S>) => string;
+  /** The parcel's permits, attached to each returned row as `permits` (property_detail). */
+  permitsSql?: (a: z.infer<S>) => string;
   needsEmbedding?: boolean;
   /** true when a `place` argument should be resolved to latitude/longitude before SQL is built */
   usesPoint: boolean;
@@ -445,6 +447,7 @@ export const tools: ToolDef[] = [
       "Full record for one TCAD property id: owner, deed, roof-age evidence, hail, and every roofing permit on the parcel with contractor.",
     schema: propertySchema,
     sql: (a) => propertySql(a.prop_id),
+    permitsSql: (a) => propertyPermitsSql(a.prop_id),
     usesPoint: false,
   }),
   def({
@@ -566,7 +569,11 @@ export async function runTool(
     args._qvec = Array.from(await embedQuery(String(args.query)));
   }
   const sql = tool.sql(args);
-  const rows = withLookupLinks(await run(sql));
+  let rows = withLookupLinks(await run(sql));
+  if (tool.permitsSql && rows.length) {
+    const permits = withLookupLinks(await run(tool.permitsSql(args)));
+    rows = rows.map((r) => ({ ...r, permits }));
+  }
   const count = tool.countSql ? (await run(tool.countSql(args)))[0] : undefined;
   delete args._qvec;
   return { rows, count, sql, args, resolvedPlace };

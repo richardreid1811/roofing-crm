@@ -58,12 +58,16 @@ const EXAMPLES = [
   "Which homes near Allandale were hit by large hail in the last 3 years?",
 ];
 
-const compact = (rows: Row[]) =>
+// Nested rows (property_detail's `permits`) are compacted the same way.
+const compact = (rows: Row[]): Row[] =>
   rows.slice(0, MAX_ROWS_TO_MODEL).map((r) =>
     Object.fromEntries(
       Object.entries(r)
         .filter(([k, v]) => !DROP_FOR_MODEL.has(k) && v !== null && v !== undefined)
-        .map(([k, v]) => [k, typeof v === "string" && v.length > 140 ? `${v.slice(0, 140)}…` : v]),
+        .map(([k, v]) => [
+          k,
+          typeof v === "string" && v.length > 140 ? `${v.slice(0, 140)}…` : Array.isArray(v) ? compact(v as Row[]) : v,
+        ]),
     ),
   );
 
@@ -294,15 +298,21 @@ export default function Agent() {
 function ToolTurn({ turn }: { turn: Extract<Turn, { kind: "tool" }> }) {
   const { snapshot, saveLeads, leadsByProp, openProperty } = useApp();
   const [selected, setSelected] = useState<Set<number>>(new Set());
+  const [saving, setSaving] = useState(false);
   const rows = turn.rows;
   const savableIdx = rows
     .map((r, i) => (r.prop_id && !leadsByProp.has(String(r.prop_id)) ? i : -1))
     .filter((i) => i >= 0);
 
   async function save() {
-    if (!snapshot) return;
+    if (!snapshot || saving) return; // one save at a time: a second click must not resend the batch
     const inputs = [...selected].map((i) => toLeadInput(rows[i], snapshot, "agent")).filter((x) => x !== null);
-    if ((await saveLeads(inputs)) !== null) setSelected(new Set());
+    setSaving(true);
+    try {
+      if ((await saveLeads(inputs)) !== null) setSelected(new Set());
+    } finally {
+      setSaving(false);
+    }
   }
 
   return (
@@ -407,8 +417,8 @@ function ToolTurn({ turn }: { turn: Extract<Turn, { kind: "tool" }> }) {
             <button className="small" onClick={() => setSelected(new Set(savableIdx))} disabled={!savableIdx.length}>
               Select all
             </button>
-            <button className="primary small" onClick={save} disabled={!selected.size}>
-              Save {selected.size || ""} as lead{selected.size === 1 ? "" : "s"}
+            <button className="primary small" onClick={save} disabled={!selected.size || saving}>
+              {saving ? "Saving…" : `Save ${selected.size || ""} as lead${selected.size === 1 ? "" : "s"}`}
             </button>
           </div>
         </>

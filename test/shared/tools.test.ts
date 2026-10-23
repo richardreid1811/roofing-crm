@@ -1,6 +1,6 @@
 import { asSchema } from "ai";
 import { beforeAll, describe, expect, it } from "vitest";
-import { propertyPermitsSql, runTool, tools, type Run } from "../../shared/tools";
+import { propertyPermitsSql, runTool, tools, type Row, type Run } from "../../shared/tools";
 import { CENTER, fixture, n } from "./fixture";
 
 let run: Run;
@@ -141,6 +141,16 @@ describe("single-signal tools", () => {
     const closed = rows.find((r) => r.status_bucket === "closed");
     expect(closed?.is_open).toBe(false);
     expect(n(closed?.duration_days)).toBeGreaterThan(700);
+  });
+
+  it("property_detail returns the property with every permit on the parcel", async () => {
+    const res = await runTool("property_detail", { prop_id: "6" }, run);
+    expect(ids(res.rows)).toEqual(["6"]);
+    const permits = res.rows[0].permits as Row[];
+    expect(permits.map((p) => p.permit_number).sort()).toEqual(
+      (await run(propertyPermitsSql("6"))).map((p) => p.permit_number).sort(),
+    );
+    expect(permits).toHaveLength(2);
   });
 
   it("every tool exposes a JSON Schema the model can call", async () => {

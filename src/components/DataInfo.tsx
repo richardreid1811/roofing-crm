@@ -80,8 +80,9 @@ export default function DataInfo({ onClose }: { onClose: () => void }) {
             building permits.
           </li>
           <li>
-            BBB ratings are not in the data: BBB blocks automated access and offers no public API. Each contractor has a
-            “Check BBB” link instead.
+            BBB ratings are not in the published data: BBB blocks automated access and offers no public API. A rep looks
+            the contractor up on BBB (each contractor links to BBB&apos;s search) and records the rating in the CRM; it
+            is then shown, labelled as rep-recorded, wherever that contractor appears.
           </li>
           <li>Hail is NOAA Storm Events point reports, a lead signal rather than proof of damage.</li>
         </ul>
