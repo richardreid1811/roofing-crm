@@ -107,6 +107,13 @@ export type Lead = {
   updated_at: string;
 };
 
+/** What the saved-property index needs: whether a property is a lead, and which one. */
+export type LeadRef = Pick<Lead, "id" | "prop_id" | "stage">;
+
+/** Leads per list page (GET /leads); the list asks for further pages with `offset`. */
+export const LEADS_PAGE = 200;
+export const MAX_LEADS_PAGE = 500;
+
 export type LeadEvent = {
   id: number;
   lead_id: string;

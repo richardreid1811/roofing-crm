@@ -3,12 +3,15 @@
 import { Hono } from "hono";
 import {
   createLeadsSchema,
+  LEADS_PAGE,
   leadPatchSchema,
+  MAX_LEADS_PAGE,
   noteSchema,
   STAGE_LABEL,
   STAGES,
   type Lead,
   type LeadEvent,
+  type LeadRef,
   type Stage,
 } from "../shared/leads";
 import { DEMO_WORKSPACE_ID } from "../shared/workspaces";
@@ -52,18 +55,33 @@ leads.get("/", async (c) => {
     where.push("(address like ? or owner_name like ? or prop_id = ?)");
     binds.push(`%${q}%`, `%${q}%`, q);
   }
-  const { results } = await c.env.DB.prepare(
-    `select * from leads where ${where.join(" and ")} order by updated_at desc limit 1000`,
-  )
-    .bind(...binds)
-    .all<LeadRow>();
-  const counts = await c.env.DB.prepare("select stage, count(*) as n from leads where workspace_id = ? group by stage")
-    .bind(ws)
-    .all<{ stage: Stage; n: number }>();
+  // Paged: `total` is every match, and `next_offset` asks for the next page (null on the last one).
+  const limit = Math.min(Math.max(Math.trunc(Number(c.req.query("limit")) || LEADS_PAGE), 1), MAX_LEADS_PAGE);
+  const offset = Math.max(Math.trunc(Number(c.req.query("offset")) || 0), 0);
+  const [page, matching, counts] = await c.env.DB.batch([
+    c.env.DB.prepare(
+      `select * from leads where ${where.join(" and ")} order by updated_at desc, id limit ? offset ?`,
+    ).bind(...binds, limit, offset),
+    c.env.DB.prepare(`select count(*) as n from leads where ${where.join(" and ")}`).bind(...binds),
+    c.env.DB.prepare("select stage, count(*) as n from leads where workspace_id = ? group by stage").bind(ws),
+  ]);
+  const rows = page.results as LeadRow[];
+  const total = (matching.results[0] as { n: number } | undefined)?.n ?? 0;
+  const byStage = counts.results as { stage: Stage; n: number }[];
   return c.json({
-    leads: results.map(toLead),
-    counts: Object.fromEntries(STAGES.map((s) => [s, counts.results.find((r) => r.stage === s)?.n ?? 0])),
+    leads: rows.map(toLead),
+    total,
+    next_offset: offset + rows.length < total ? offset + rows.length : null,
+    counts: Object.fromEntries(STAGES.map((s) => [s, byStage.find((r) => r.stage === s)?.n ?? 0])),
   });
+});
+
+// Every saved property in the workspace (at most MAX_LEADS small rows), for "already a lead" markers.
+leads.get("/index", async (c) => {
+  const { results } = await c.env.DB.prepare("select id, prop_id, stage from leads where workspace_id = ?")
+    .bind(c.get("workspace"))
+    .all<LeadRef>();
+  return c.json({ leads: results });
 });
 
 leads.post("/", async (c) => {

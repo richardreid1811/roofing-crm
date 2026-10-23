@@ -128,6 +128,24 @@ describe("leads API", () => {
     expect(found.leads.map((l) => l.prop_id)).toEqual(["102"]);
   });
 
+  it("pages the list and serves a complete saved-property index", async () => {
+    type Page = { leads: Lead[]; total: number; next_offset: number | null };
+    const first = await json<Page>(await call("/leads?limit=1"));
+    expect(first.total).toBeGreaterThanOrEqual(2);
+    expect(first.leads).toHaveLength(1);
+    expect(first.next_offset).toBe(1);
+    const seen = [...first.leads];
+    for (let off = first.next_offset; off !== null;) {
+      const page = await json<Page>(await call(`/leads?limit=1&offset=${off}`));
+      seen.push(...page.leads);
+      off = page.next_offset;
+    }
+    expect(new Set(seen.map((l) => l.id)).size).toBe(first.total);
+    const index = await json<{ leads: { id: string; prop_id: string; stage: string }[] }>(await call("/leads/index"));
+    expect(index.leads.map((l) => l.id).sort()).toEqual(seen.map((l) => l.id).sort());
+    expect(Object.keys(index.leads[0]).sort()).toEqual(["id", "prop_id", "stage"]);
+  });
+
   it("deletes a lead and its activity", async () => {
     const { created } = await json<{ created: Lead[] }>(
       await call("/leads", { method: "POST", body: JSON.stringify({ leads: [lead("301")] }) }),
@@ -209,6 +227,15 @@ describe("rep-recorded BBB ratings", () => {
     expect((await call(`/bbb/entries/${saved.id}`, { method: "DELETE" })).status).toBe(204);
     const after = await json<{ ratings: Record<string, Rating> }>(await call(`/bbb?keys=${KEY}`));
     expect(after.ratings[KEY].rating).toBe("B+");
+  });
+
+  it("reads 200 contractor keys in one request (one JSON parameter, under D1's 100-parameter limit)", async () => {
+    const keys = Array.from({ length: 199 }, (_, i) => `contractor:${i.toString(16).padStart(32, "0")}`);
+    const res = await call(`/bbb?keys=${[KEY, ...keys].join(",")}`);
+    expect(res.status).toBe(200);
+    const { ratings } = await json<{ ratings: Record<string, Rating> }>(res);
+    expect(Object.keys(ratings)).toEqual([KEY]);
+    expect((await call(`/bbb?keys=${[KEY, OTHER, ...keys].join(",")}`)).status).toBe(400);
   });
 
   it("validates contractor keys, ratings and BBB links", async () => {

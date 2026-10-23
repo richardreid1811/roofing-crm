@@ -22,12 +22,13 @@ bbb.get("/", async (c) => {
   const parsed = z.array(contractorKeySchema).max(MAX_KEYS).safeParse(keys);
   if (!parsed.success) return c.json({ error: "invalid", message: `Up to ${MAX_KEYS} valid contractor keys.` }, 400);
   if (!keys.length) return c.json({ ratings: {} });
+  // The keys go in as one JSON parameter: D1 allows at most 100 bound parameters per statement.
   const { results } = await c.env.DB.prepare(
     `select r.* from bbb_ratings r
      join (select contractor_key, max(id) as id from bbb_ratings
-           where contractor_key in (${keys.map(() => "?").join(",")}) group by contractor_key) latest using (id)`,
+           where contractor_key in (select value from json_each(?)) group by contractor_key) latest using (id)`,
   )
-    .bind(...keys)
+    .bind(JSON.stringify(keys))
     .all<Row>();
   return c.json({ ratings: Object.fromEntries(results.map((r) => [r.contractor_key, toRating(r)])) });
 });

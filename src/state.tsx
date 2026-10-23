@@ -1,6 +1,6 @@
 // App-wide state: the snapshot pointer, the in-browser database, the saved-lead index and toasts.
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { MAX_LEADS_PER_SAVE, type Lead, type LeadInput } from "../shared/leads";
+import { MAX_LEADS_PER_SAVE, type Lead, type LeadInput, type LeadRef } from "../shared/leads";
 import { DEMO_WORKSPACE_NAME } from "../shared/workspaces";
 import { api, ApiError, type Snapshot } from "./api";
 import { initDb, type LoadStep } from "./db";
@@ -17,7 +17,8 @@ type Ctx = {
   loadError: string | null;
   /** Re-run the snapshot and data load after a failure or timeout. */
   retryLoad: () => void;
-  leadsByProp: Map<string, Lead>;
+  /** Every saved property in the active workspace. */
+  leadsByProp: Map<string, LeadRef>;
   refreshLeads: () => Promise<void>;
   saveLeads: (inputs: LeadInput[]) => Promise<{ created: Lead[]; existing: Lead[] } | null>;
   openProperty: (propId: string | null) => void;
@@ -48,7 +49,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [loadSteps, setLoadSteps] = useState<LoadStep[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [loadAttempt, setLoadAttempt] = useState(0);
-  const [leadsByProp, setLeadsByProp] = useState<Map<string, Lead>>(new Map());
+  const [leadsByProp, setLeadsByProp] = useState<Map<string, LeadRef>>(new Map());
+  const leadsSeq = useRef(0);
   const [propertyId, setPropertyId] = useState<string | null>(null);
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [bbbTarget, openBbb] = useState<BbbTarget | null>(null);
@@ -105,25 +107,31 @@ export function AppProvider({ children }: { children: ReactNode }) {
     return () => window.removeEventListener("hashchange", on);
   }, []);
 
+  // Only the latest request for the workspace still in use may set the index: refreshes overlap (every
+  // save ends with one) and a slower response can belong to a workspace the rep has since left.
   const refreshLeads = useCallback(async () => {
-    void workspace.key; // re-read when the workspace changes
+    const key = workspace.key;
+    const seq = ++leadsSeq.current;
+    const current = () => seq === leadsSeq.current && key === activeKey();
     try {
-      const { leads } = await api.listLeads();
-      setLeadsByProp(new Map(leads.map((l) => [l.prop_id, l])));
+      const { leads } = await api.leadIndex(key);
+      if (current()) setLeadsByProp(new Map(leads.map((l) => [l.prop_id, l])));
     } catch (e) {
-      toast(`Could not load leads: ${(e as Error).message}`, "error");
+      if (current()) toast(`Could not load leads: ${(e as Error).message}`, "error");
     }
   }, [toast, workspace.key]);
 
   const saveLeads = useCallback(
     async (inputs: LeadInput[]) => {
       if (!inputs.length) return null;
+      // Every chunk goes to the workspace in use when the save started, even if the rep switches meanwhile.
+      const key = activeKey();
       try {
         // Larger selections go in requests of MAX_LEADS_PER_SAVE; a failure keeps what earlier chunks saved.
         const res: { created: Lead[]; existing: Lead[] } = { created: [], existing: [] };
         try {
           for (let i = 0; i < inputs.length; i += MAX_LEADS_PER_SAVE) {
-            const part = await api.createLeads(inputs.slice(i, i + MAX_LEADS_PER_SAVE));
+            const part = await api.createLeads(inputs.slice(i, i + MAX_LEADS_PER_SAVE), key);
             res.created.push(...part.created);
             res.existing.push(...part.existing);
           }
@@ -169,6 +177,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, [loadAttempt]);
 
   useEffect(() => {
+    setLeadsByProp(new Map()); // a new workspace: no markers from the previous one while it loads
     void refreshLeads();
   }, [refreshLeads]);
 

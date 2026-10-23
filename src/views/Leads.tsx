@@ -1,5 +1,5 @@
 // CRM lead records: pipeline by stage, search, and a detail panel to work a lead.
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { permitStatusLabel, roofAgeText } from "../../shared/display";
 import { PRIORITIES, STAGE_LABEL, STAGES, type Lead, type LeadEvent, type Stage } from "../../shared/leads";
 import { api } from "../api";
@@ -14,27 +14,50 @@ export default function Leads({ leadId }: { leadId?: string }) {
   const [q, setQ] = useState("");
   const [leads, setLeads] = useState<Lead[]>([]);
   const [counts, setCounts] = useState<Record<Stage, number> | null>(null);
+  const [total, setTotal] = useState(0);
+  const [nextOffset, setNextOffset] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
+  // Typing and stage clicks overlap requests; only the latest one may fill the table.
+  const seq = useRef(0);
+  const shown = useRef<Lead[]>([]);
 
-  const load = useCallback(async () => {
-    try {
-      const res = await api.listLeads({ stage: stage === "all" ? undefined : stage, q: q.trim() || undefined });
-      setLeads(res.leads);
-      setCounts(res.counts);
-    } catch (e) {
-      toast(`Could not load leads: ${(e as Error).message}`, "error");
-    } finally {
-      setLoading(false);
-    }
-  }, [stage, q, toast]);
+  // "first": a new search; "more": the next page; "refresh": reload as many rows as are shown, so an
+  // edit made on a later page does not collapse the list back to its first page.
+  const load = useCallback(
+    async (mode: "first" | "more" | "refresh" = "first") => {
+      const mine = ++seq.current;
+      const filter = { stage: stage === "all" ? undefined : stage, q: q.trim() || undefined };
+      const rows = mode === "more" ? [...shown.current] : [];
+      const keep = mode === "refresh" ? shown.current.length : 0;
+      try {
+        let res;
+        do {
+          res = await api.listLeads({ ...filter, offset: rows.length });
+          const have = new Set(rows.map((l) => l.id));
+          rows.push(...res.leads.filter((l) => !have.has(l.id)));
+        } while (res.next_offset !== null && rows.length < keep);
+        if (mine !== seq.current) return;
+        shown.current = rows;
+        setLeads(rows);
+        setTotal(res.total);
+        setNextOffset(res.next_offset);
+        setCounts(res.counts);
+      } catch (e) {
+        if (mine === seq.current) toast(`Could not load leads: ${(e as Error).message}`, "error");
+      } finally {
+        if (mine === seq.current) setLoading(false);
+      }
+    },
+    [stage, q, toast],
+  );
 
   useEffect(() => {
-    const t = setTimeout(load, q ? 250 : 0);
+    const t = setTimeout(() => void load(), q ? 250 : 0);
     return () => clearTimeout(t);
   }, [load, q]);
 
   const changed = useCallback(async () => {
-    await Promise.all([load(), refreshLeads()]);
+    await Promise.all([load("refresh"), refreshLeads()]);
   }, [load, refreshLeads]);
 
   async function quickStage(lead: Lead, s: Stage) {
@@ -46,7 +69,7 @@ export default function Leads({ leadId }: { leadId?: string }) {
     }
   }
 
-  const total = counts ? Object.values(counts).reduce((a, b) => a + b, 0) : 0;
+  const all = counts ? Object.values(counts).reduce((a, b) => a + b, 0) : 0;
   return (
     <div className={`leads-page ${leadId ? "with-detail" : ""}`}>
       <section className="card">
@@ -61,7 +84,7 @@ export default function Leads({ leadId }: { leadId?: string }) {
         </div>
         <div className="stage-tabs" role="tablist">
           <button className={stage === "all" ? "on" : ""} onClick={() => setStage("all")}>
-            All <span className="count">{total}</span>
+            All <span className="count">{all}</span>
           </button>
           {STAGES.map((s) => (
             <button key={s} className={`${stage === s ? "on" : ""} st-${s}`} onClick={() => setStage(s)}>
@@ -127,8 +150,17 @@ export default function Leads({ leadId }: { leadId?: string }) {
             </tbody>
           </table>
         </div>
+        {nextOffset !== null && (
+          <div className="row gap">
+            <span className="muted small">
+              Showing {leads.length} of {total}
+            </span>
+            <button onClick={() => void load("more")}>Show more</button>
+          </div>
+        )}
       </section>
-      {leadId && <LeadDetail id={leadId} onChanged={changed} />}
+      {/* Keyed by lead: a different lead gets a fresh panel, never the previous lead's state. */}
+      {leadId && <LeadDetail key={leadId} id={leadId} onChanged={changed} />}
     </div>
   );
 }
@@ -154,11 +186,15 @@ function LeadDetail({ id, onChanged }: { id: string; onChanged: () => Promise<vo
   const [note, setNote] = useState("");
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  // Reloads after each edit can overlap; an older response must not replace a newer one.
+  const seq = useRef(0);
 
   const load = useCallback(async () => {
+    const mine = ++seq.current;
     try {
       const res = await api.getLead(id);
       if (res.lead.signals.contractor_key) await loadRatings([res.lead.signals.contractor_key]).catch(() => undefined);
+      if (mine !== seq.current) return;
       setLead(res.lead);
       setEvents(res.events);
       setForm({
@@ -168,7 +204,7 @@ function LeadDetail({ id, onChanged }: { id: string; onChanged: () => Promise<vo
       });
       setErr(null);
     } catch (e) {
-      setErr(String((e as Error).message ?? e));
+      if (mine === seq.current) setErr(String((e as Error).message ?? e));
     }
   }, [id]);
   useEffect(() => {

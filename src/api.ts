@@ -1,6 +1,6 @@
 // Typed client for the Worker API.
 import type { BbbRating, BbbRatingInput } from "../shared/bbb";
-import type { Lead, LeadEvent, LeadInput, LeadPatch, Stage } from "../shared/leads";
+import type { Lead, LeadEvent, LeadInput, LeadPatch, LeadRef, Stage } from "../shared/leads";
 import { WORKSPACE_HEADER, type Workspace } from "../shared/workspaces";
 import { activeKey } from "./workspace";
 
@@ -27,9 +27,9 @@ export class ApiError extends Error {
   }
 }
 
-async function call<T>(path: string, init?: RequestInit): Promise<T> {
+/** `key` pins the workspace (null: the demo); by default each request uses the active one. */
+async function call<T>(path: string, init?: RequestInit, key: string | null = activeKey()): Promise<T> {
   // A private workspace's key goes in a header; without one the Worker uses the public demo workspace.
-  const key = activeKey();
   const res = await fetch(`/api${path}`, {
     ...init,
     headers: {
@@ -46,13 +46,21 @@ async function call<T>(path: string, init?: RequestInit): Promise<T> {
 
 export const api = {
   snapshot: () => call<Snapshot>("/snapshot"),
-  listLeads: (params: { stage?: Stage; q?: string } = {}) => {
-    const qs = new URLSearchParams(Object.entries(params).filter(([, v]) => v) as [string, string][]).toString();
-    return call<{ leads: Lead[]; counts: Record<Stage, number> }>(`/leads${qs ? `?${qs}` : ""}`);
+  listLeads: (params: { stage?: Stage; q?: string; offset?: number } = {}) => {
+    const qs = new URLSearchParams(
+      Object.entries(params)
+        .filter(([, v]) => v)
+        .map(([k, v]) => [k, String(v)]),
+    ).toString();
+    return call<{ leads: Lead[]; total: number; next_offset: number | null; counts: Record<Stage, number> }>(
+      `/leads${qs ? `?${qs}` : ""}`,
+    );
   },
+  /** Every saved property in the workspace (id, prop_id, stage). */
+  leadIndex: (key?: string | null) => call<{ leads: LeadRef[] }>("/leads/index", undefined, key),
   getLead: (id: string) => call<{ lead: Lead; events: LeadEvent[] }>(`/leads/${encodeURIComponent(id)}`),
-  createLeads: (leads: LeadInput[]) =>
-    call<{ created: Lead[]; existing: Lead[] }>("/leads", { method: "POST", body: JSON.stringify({ leads }) }),
+  createLeads: (leads: LeadInput[], key?: string | null) =>
+    call<{ created: Lead[]; existing: Lead[] }>("/leads", { method: "POST", body: JSON.stringify({ leads }) }, key),
   updateLead: (id: string, patch: LeadPatch) =>
     call<{ lead: Lead }>(`/leads/${encodeURIComponent(id)}`, { method: "PATCH", body: JSON.stringify(patch) }),
   addNote: (id: string, text: string) =>
