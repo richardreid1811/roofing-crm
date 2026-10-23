@@ -10,6 +10,8 @@ export const GATEWAYS = [
 export const TABLES = ["leads", "roofing_permits", "contractors", "hail_events", "permit_embeddings"] as const;
 const TTL_MS = 5 * 60_000;
 const TIMEOUT_MS = 8_000;
+/** After a failed refresh, serve the stale pointer at once for this long before trying the sources again. */
+export const RETRY_MS = 60_000;
 
 export type Snapshot = {
   run_id: string;
@@ -31,7 +33,7 @@ type Manifest = {
   counts: Record<string, string>;
 };
 
-let cached: { at: number; value: Snapshot } | null = null;
+let cached: { at: number; value: Snapshot; stale?: boolean } | null = null;
 
 async function getJson<T>(url: string, fetcher: typeof fetch): Promise<T> {
   const res = await fetcher(url, { signal: AbortSignal.timeout(TIMEOUT_MS) });
@@ -40,7 +42,7 @@ async function getJson<T>(url: string, fetcher: typeof fetch): Promise<T> {
 }
 
 export async function loadSnapshot(historyUrl: string, fetcher: typeof fetch = fetch): Promise<Snapshot> {
-  if (cached && Date.now() - cached.at < TTL_MS) return cached.value;
+  if (cached && Date.now() - cached.at < TTL_MS) return cached.stale ? { ...cached.value, stale: true } : cached.value;
   try {
     const history = await getJson<History>(historyUrl, fetcher);
     const run = [...history.runs].reverse().find((r) => r.manifest_cid);
@@ -76,7 +78,11 @@ export async function loadSnapshot(historyUrl: string, fetcher: typeof fetch = f
     cached = { at: Date.now(), value };
     return value;
   } catch (e) {
-    if (cached) return { ...cached.value, stale: true };
+    if (cached) {
+      // Back off: without this, every request during an outage would wait out the full fetch sequence.
+      cached = { at: Date.now() - TTL_MS + RETRY_MS, value: cached.value, stale: true };
+      return { ...cached.value, stale: true };
+    }
     throw e;
   }
 }

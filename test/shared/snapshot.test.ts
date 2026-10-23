@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { loadSnapshot, resetSnapshotCache } from "../../worker/snapshot";
+import { loadSnapshot, resetSnapshotCache, RETRY_MS } from "../../worker/snapshot";
 
 const HISTORY = "https://example.test/history.json";
 const history = {
@@ -49,6 +49,32 @@ describe("snapshot pointer", () => {
       const snap = await loadSnapshot(HISTORY, fakeFetch(0, true));
       expect(snap.stale).toBe(true);
       expect(snap.run_id).toBe("r1");
+    } finally {
+      Date.now = realNow;
+    }
+  });
+
+  it("after a failed refresh, serves the stale snapshot without refetching until the retry backoff ends", async () => {
+    await loadSnapshot(HISTORY, fakeFetch());
+    const realNow = Date.now;
+    const t0 = realNow() + 10 * 60_000;
+    let calls = 0;
+    const down = (async () => {
+      calls++;
+      throw new Error("network down");
+    }) as typeof fetch;
+    try {
+      Date.now = () => t0;
+      expect((await loadSnapshot(HISTORY, down)).stale).toBe(true);
+      const tried = calls;
+      Date.now = () => t0 + RETRY_MS - 1000;
+      expect((await loadSnapshot(HISTORY, down)).stale).toBe(true);
+      expect(calls).toBe(tried); // served from the backoff, no fetch
+      Date.now = () => t0 + RETRY_MS + 1000;
+      expect((await loadSnapshot(HISTORY, down)).stale).toBe(true);
+      expect(calls).toBeGreaterThan(tried); // backoff over: the sources are tried again
+      Date.now = () => t0 + 2 * RETRY_MS + 2000;
+      expect((await loadSnapshot(HISTORY, fakeFetch())).stale).toBeUndefined(); // recovered
     } finally {
       Date.now = realNow;
     }

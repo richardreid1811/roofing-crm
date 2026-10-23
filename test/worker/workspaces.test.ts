@@ -200,7 +200,7 @@ describe("durable write limiter", () => {
     expect((await call("/leads", { ip })).status).toBe(200);
     const a = await createWorkspace("Limiter");
     expect((await call("/leads/none", { method: "DELETE", ip, key: a.key })).status).toBe(204);
-  });
+  }, 60_000); // may first wait up to 15 s for a fresh minute window
 });
 
 describe("migration 0004", () => {
